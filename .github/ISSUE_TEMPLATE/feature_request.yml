@@ -1,0 +1,59 @@
+name: Feature Request
+description: Suggest a new language feature, adapter, or improvement
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to suggest an improvement! Please describe your idea clearly.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / Motivation
+      description: What problem are you trying to solve? What is the current limitation?
+      placeholder: Currently there's no way to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe what you'd like to see added or changed.
+    validations:
+      required: true
+
+  - type: textarea
+    id: slang-example
+    attributes:
+      label: Example SLANG Syntax (if applicable)
+      description: If this is a language feature, show what it would look like.
+      render: text
+      placeholder: |
+        flow "example" {
+          agent A {
+            -- your proposed syntax here
+          }
+        }
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Any alternative solutions or features you've considered?
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      options:
+        - Language feature
+        - New LLM adapter
+        - CLI improvement
+        - MCP / tooling
+        - Documentation
+        - Performance
+        - Other
+    validations:
+      required: true

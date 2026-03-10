@@ -1,0 +1,66 @@
+{
+  "name": "slang",
+  "version": "0.1.0",
+  "description": "SLANG — Super Language for Agent Negotiation & Governance",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "bin": {
+    "slang": "./dist/cli.js",
+    "slang-mcp": "./dist/mcp.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsup",
+    "postbuild": "chmod +x dist/cli.js dist/mcp.js",
+    "dev": "tsup --watch",
+    "test": "node --import tsx/esm --test src/**/*.test.ts",
+    "prepublishOnly": "npm run build && npm test",
+    "slang": "node dist/cli.js"
+  },
+  "keywords": [
+    "llm",
+    "agents",
+    "multi-agent",
+    "workflow",
+    "meta-language",
+    "dsl",
+    "language",
+    "orchestration",
+    "openai",
+    "anthropic",
+    "mcp",
+    "model-context-protocol"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/riktar/slang.git"
+  },
+  "homepage": "https://github.com/riktar/slang#readme",
+  "bugs": {
+    "url": "https://github.com/riktar/slang/issues"
+  },
+  "devDependencies": {
+    "@types/node": "^25.4.0",
+    "tsup": "^8.5.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1"
+  }
+}

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://github.com/artiforgeai/slang#readme
+    about: Read the README and documentation first
+  - name: Discussions
+    url: https://github.com/artiforgeai/slang/discussions
+    about: Ask questions and share ideas in Discussions
