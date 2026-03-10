@@ -118,7 +118,7 @@ export function createAnthropicAdapter(config: AnthropicAdapterConfig): LLMAdapt
 // No API key required — uses the subscription the user already has.
 
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { CreateMessageRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { CreateMessageResultSchema } from "@modelcontextprotocol/sdk/types.js";
 
 export function createSamplingAdapter(server: Server, defaultModel?: string): LLMAdapter {
   return {
@@ -140,7 +140,7 @@ export function createSamplingAdapter(server: Server, defaultModel?: string): LL
             maxTokens: 4096,
           },
         },
-        CreateMessageRequestSchema,
+        CreateMessageResultSchema,
       );
 
       const content =

@@ -7,7 +7,7 @@ SLANG ships as both a **CLI tool** and an **MCP server**, so it plugs into every
 ## Quick install (npm)
 
 ```bash
-npm install -g slang
+npm install -g @riktar/slang
 ```
 
 This installs two binaries:
@@ -37,7 +37,7 @@ All adapters can be configured through environment variables instead of passing 
 Add SLANG as an MCP server so Claude Code can run, parse, and check `.slang` files directly.
 
 ```bash
-claude mcp add slang -- slang-mcp
+claude mcp add slang -- npx --package @riktar/slang slang-mcp
 ```
 
 No API key needed — SLANG defaults to the `sampling` adapter, which delegates LLM calls back to Claude through the MCP protocol using your existing Claude subscription.
@@ -45,7 +45,7 @@ No API key needed — SLANG defaults to the `sampling` adapter, which delegates 
 If you prefer to use a separate API key (e.g. to charge to a different account):
 
 ```bash
-claude mcp add slang -- env SLANG_ADAPTER=anthropic SLANG_API_KEY=sk-ant-... slang-mcp
+claude mcp add slang -- env SLANG_ADAPTER=anthropic SLANG_API_KEY=sk-ant-... npx --package @riktar/slang slang-mcp
 ```
 
 Verify it's registered:
@@ -166,7 +166,7 @@ For hosts that require an absolute path (e.g. some Docker setups):
 ```json
 {
   "command": "node",
-  "args": ["/usr/local/lib/node_modules/slang/dist/mcp.js"]
+  "args": ["/usr/local/lib/node_modules/@riktar/slang/dist/mcp.js"]
 }
 ```
 

@@ -44,7 +44,7 @@ commit  →  accept a final result and terminate
 ### Install
 
 ```bash
-npm install slang
+npm install @riktar/slang
 ```
 
 ### Hello World
@@ -204,7 +204,7 @@ slang prompt                 # Print the zero-setup system prompt
 SLANG is also a TypeScript/JavaScript library:
 
 ```typescript
-import { parse, runFlow, createOpenAIAdapter } from 'slang'
+import { parse, runFlow, createOpenAIAdapter } from '@riktar/slang'
 
 // Parse a .slang file
 const ast = parse(`
@@ -229,7 +229,7 @@ const result = await runFlow(source, {
 ### Static Analysis
 
 ```typescript
-import { parse, resolveDeps, detectDeadlocks } from 'slang'
+import { parse, resolveDeps, detectDeadlocks } from '@riktar/slang'
 
 const program = parse(source)
 const graph = resolveDeps(program.flows[0])
@@ -248,7 +248,7 @@ import {
   createAnthropicAdapter,
   createSamplingAdapter,
   createEchoAdapter,
-} from 'slang'
+} from '@riktar/slang'
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js'
 
 // MCP Sampling — delegates to the host (Claude Code, Claude Desktop, etc.)
@@ -278,10 +278,10 @@ SLANG ships a built-in [Model Context Protocol](https://modelcontextprotocol.io/
 
 ```bash
 # Add to Claude Code — no API key needed, uses your Claude subscription via MCP sampling
-claude mcp add slang -- npx slang-mcp
+claude mcp add slang -- npx --package @riktar/slang slang-mcp
 
 # Or run directly
-npx slang-mcp
+npx --package @riktar/slang slang-mcp
 ```
 
 ### Available Tools
@@ -300,7 +300,7 @@ npx slang-mcp
   "mcpServers": {
     "slang": {
       "command": "npx",
-      "args": ["-y", "slang-mcp"]
+      "args": ["-y", "--package", "@riktar/slang", "slang-mcp"]
     }
   }
 }
@@ -313,7 +313,7 @@ No API key needed — SLANG defaults to the `sampling` adapter and delegates LLM
   "mcpServers": {
     "slang": {
       "command": "npx",
-      "args": ["-y", "slang-mcp"],
+      "args": ["-y", "--package", "@riktar/slang", "slang-mcp"],
       "env": {
         "SLANG_ADAPTER": "openai",
         "SLANG_API_KEY": "your-api-key"

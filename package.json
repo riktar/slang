@@ -1,6 +1,6 @@
 {
-  "name": "slang",
-  "version": "0.1.0",
+  "name": "@riktar/slang",
+  "version": "0.1.1",
   "description": "SLANG — Super Language for Agent Negotiation & Governance",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -18,7 +18,8 @@
     "slang-mcp": "./dist/mcp.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "ZERO_SETUP_PROMPT.md"
   ],
   "engines": {
     "node": ">=22"
