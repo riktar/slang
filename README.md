@@ -366,7 +366,3 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines. We welcome PRs for:
 - Language features
 - Examples and documentation
 - Bug fixes
-
-## License
-
-[MIT](LICENSE) © ArtiforgeAI

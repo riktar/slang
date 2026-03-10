@@ -47,6 +47,7 @@
     "model-context-protocol"
   ],
   "license": "MIT",
+  "author": "Riccardo Tartaglia",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/riktar/slang.git"
