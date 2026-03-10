@@ -8,6 +8,7 @@
 <p align="center">
   <a href="#quick-start">Quick Start</a> •
   <a href="#why-slang">Why SLANG</a> •
+  <a href="#exchange-algebra">Exchange Algebra</a> •
   <a href="#language-overview">Language</a> •
   <a href="#examples">Examples</a> •
   <a href="#cli">CLI</a> •
@@ -38,6 +39,183 @@ stake   →  produce content and deliver it to an agent
 await   →  block until another agent sends you data
 commit  →  accept a final result and terminate
 ```
+
+---
+
+## Exchange Algebra
+
+Every agent framework today thinks in pipelines: "do A, then B, then C." Even when they parallelize, the mental model is a directed graph — nodes and arrows.
+
+**Exchange Algebra starts from a different observation**: if you look at what agents actually *do*, they only do three things:
+
+1. Produce an output and direct it to someone → **`stake`**
+2. Wait for input from someone → **`await`**
+3. Decide whether the result is acceptable or another iteration is needed → **`commit | escalate`**
+
+Everything else — pipelines, DAGs, loops, branching, error handling — is a combination of these three operations.
+
+### Why `stake` and not `send`
+
+The word `stake` is not accidental. It's not a simple "send message." It means **"I put forward a claim"** — like saying "I'd bet my life that...". This has a huge practical implication:
+
+```
+agent Analyst {
+  stake find_trends(data) -> @Critic
+}
+```
+
+The `Analyst` is not just sending data to the `Critic`. It is *declaring*: "I assert that these are the trends." This subtle semantic difference means:
+
+- The output has an **owner** — the Analyst is accountable for it
+- The output is **contestable** — the Critic can reject it
+- The output has an **implicit cost** — tokens were spent to produce it
+
+In a traditional framework, an agent produces output and that's it. There is no concept of ownership, contestability, or accountability. In SLANG, it's built into the language.
+
+### Why `await` and not `receive`
+
+`await` is not a simple "receive." It's a **dependency declaration**:
+
+```
+agent Critic {
+  await claim <- @Analyst
+  stake verify(claim, sources: 3) -> @Analyst
+}
+```
+
+The `Critic` doesn't poll. It doesn't ask "is there something for me?". It *declares*: "I exist to receive claims from Analyst." This lets the runtime (or the LLM itself) to:
+
+- Know **who depends on whom** without building an explicit DAG
+- Know **what can run in parallel** — everything without pending `await`s
+- **Detect deadlocks** — two agents waiting on each other with no pending `stake`
+
+### Why `commit | escalate` is the Key Primitive
+
+This is the primitive no other framework has:
+
+```
+commit verdict    if verdict.confidence > 0.8
+escalate @Arbiter if verdict.confidence <= 0.8
+```
+
+**`commit`** means: "this result is acceptable, we stop here." It's a *local termination criterion* — each agent knows when it's done. No orchestrator needed to say "ok, enough."
+
+**`escalate`** means: "I can't resolve this, someone else is needed." It's a *declarative fallback* — not error handling, not a try/catch. It's an explicit declaration that the local strategy has failed and a higher-level strategy is required.
+
+This solves the biggest problem in multi-agent systems: **how do they stop?** Today the answer is: timers, `max_iterations`, or hope. With `commit`/`escalate`, termination is *emergent* — the system converges when enough agents have committed.
+
+```
+converge when: committed_count >= 1
+budget: tokens(50k), rounds(5)
+```
+
+`converge` is the global safety net. `budget` is the hard constraint. But normal termination comes from local `commit`s.
+
+### End-to-End Runtime Example
+
+Here's how exchange algebra plays out in a real pricing strategy flow:
+
+```
+flow "pricing-strategy" {
+  agent Researcher {
+    stake gather(competitors: ["A", "B", "C"]) -> @Analyst
+  }
+
+  agent Analyst {
+    await data <- @Researcher
+    stake recommend(pricing_model, based_on: data) -> @Validator
+    await feedback <- @Validator
+
+    commit feedback   if feedback.approved
+    escalate @Human   if feedback.rejected
+  }
+
+  agent Validator {
+    await recommendation <- @Analyst
+    stake validate(recommendation, against: [
+      "margin > 20%",
+      "market_share_impact > neutral"
+    ]) -> @Analyst
+  }
+
+  converge when: committed_count >= 1
+  budget: tokens(30k), rounds(3)
+}
+```
+
+**What happens at runtime:**
+
+1. The runtime reads the flow. Only `Researcher` has no pending `await` → it runs first.
+2. `Researcher` stakes → output goes to `Analyst`. `Analyst`'s `await data <- @Researcher` is satisfied → it starts.
+3. `Analyst` stakes a recommendation → goes to `Validator`. `Validator`'s `await` is satisfied → it starts.
+4. `Validator` checks against explicit criteria. Stakes verdict back to `Analyst`.
+5. `Analyst` receives feedback:
+   - `feedback.approved` → **`commit`**. Flow terminates.
+   - `feedback.rejected` → **`escalate @Human`**. A human must intervene.
+
+> Nobody described a DAG. Nobody wrote `step_1 -> step_2 -> step_3`. Execution order *emerges* from `stake`/`await` dependencies. Add a fourth agent and you don't rewrite the flow — just declare what it produces and what it awaits.
+
+### The Moat
+
+The moat is not technical. Any framework can copy the syntax. The moat is **cognitive and network-based**, operating on three levels.
+
+#### 1. LLM-Native Means Zero Tooling
+
+SLANG doesn't need a separate runtime. An LLM can read, generate, and *execute* SLANG in the same conversation:
+
+> "User: organize a research on X with three agents"
+> "LLM: here's the SLANG flow → [generates it] → [executes it] → here's the result"
+
+No other standard can do this. JSON Schema needs a parser. MCP needs a server. **SLANG is structured natural language — an LLM processes it natively. The runtime is the LLM itself.**
+
+This means adoption at zero cost. Nothing to install, nothing to configure. Paste a SLANG flow in a chat and it works. The switching cost is zero to enter, but high to exit once you have a library of flows.
+
+#### 2. Composability = Network Effect
+
+```
+flow "full-report" {
+  import "pricing-strategy" as pricing
+  import "competitor-analysis" as competitors
+  import "market-sizing" as market
+
+  agent Orchestrator {
+    stake run(pricing)     -> @Compiler
+    stake run(competitors) -> @Compiler
+    stake run(market)      -> @Compiler
+  }
+
+  agent Compiler {
+    await results <- @Orchestrator (count: 3)
+    stake compile(results) -> @out
+    commit
+  }
+}
+```
+
+SLANG flows are composable. Import one inside another. This creates a **network effect**: the more flows exist, the easier it is to build new ones, and the more expensive it is to migrate. Exactly like npm for JavaScript — the value is not in the package manager, it's in the catalog.
+
+#### 3. The Language Is the Documentation
+
+A SLANG flow is self-documenting. Read it out loud:
+
+*"The Researcher stakes gather on competitors A, B, C and sends it to the Analyst. The Analyst awaits data from the Researcher, recommends a pricing model, and sends to the Validator. If the Validator approves, commit. If rejected, escalate to a Human."*
+
+No comments needed. No documentation needed. No diagrams needed. **The code is the diagram.** This reduces onboarding cost to zero — anyone reading SLANG understands what the system does, including LLMs that have never seen it before.
+
+### Traditional Frameworks vs. SLANG Exchange Algebra
+
+| | Traditional Frameworks | SLANG Exchange Algebra |
+|---|---|---|
+| Mental model | Pipeline / DAG | Exchanges between agents |
+| Execution order | Explicit (defined by human) | Emergent (from dependencies) |
+| Termination | Timer / `max_iterations` | Local `commit` / `escalate` |
+| Runtime required | Yes (SDK, server) | No — the LLM *is* the runtime |
+| Composability | Limited | Native `import` / compose |
+| Readability | Code or JSON | Structured natural language |
+
+> **The moat**: zero adoption cost + network effect on flows + the LLM is the runtime. Anyone can copy the syntax. No one can copy a catalog of thousands of reusable flows.
+
+---
 
 ## Quick Start
 
