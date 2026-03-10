@@ -1,11 +1,3 @@
-<p align="center">
-  <img src="https://img.shields.io/npm/v/slang?style=flat-square&color=blue" alt="npm version" />
-  <img src="https://img.shields.io/github/license/artiforgeai/slang?style=flat-square" alt="license" />
-  <img src="https://img.shields.io/node/v/slang?style=flat-square" alt="node" />
-  <img src="https://img.shields.io/github/actions/workflow/status/artiforgeai/slang/ci.yml?style=flat-square" alt="CI" />
-  <img src="https://img.shields.io/npm/dm/slang?style=flat-square" alt="downloads" />
-</p>
-
 <h1 align="center">🗣️ SLANG</h1>
 
 <p align="center">
