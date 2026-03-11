@@ -1,7 +1,7 @@
 # SLANG Language Playbook
 
 > Complete syntax reference, formal grammar, and annotated examples for  
-> **SLANG v0.1.0** — Super Language for Agent Negotiation & Governance.
+> **SLANG v0.2.0** — Super Language for Agent Negotiation & Governance.
 
 ---
 
@@ -34,8 +34,10 @@ flow "name" {
     role: "description"           -- optional: natural language role
     model: "model-name"           -- optional: LLM model to use
     tools: [tool1, tool2]         -- optional: available tools
+    retry: 3                      -- optional: max retry attempts on failure
 
     stake func(args) -> @Target   -- produce & send
+      output: { key: "type" }     -- optional: structured output contract
     await binding <- @Source      -- wait for input
     commit [value] [if cond]      -- accept & stop
     escalate @Target [reason: ""] [if cond]  -- delegate upward
@@ -192,8 +194,7 @@ agent Researcher {
 |------|--------|---------|
 | `role` | `role: "string"` | Natural language description — becomes part of the agent's system prompt |
 | `model` | `model: "string"` | LLM model preference; the router adapter dispatches to the matching backend |
-| `tools` | `tools: [id, ...]` | List of tools available to this agent |
-
+| `tools` | `tools: [id, ...]` | List of tools available to this agent || `retry` | `retry: N` | Max number of attempts when the LLM call fails (default: 1 = no retry) |
 **`model` and multi-endpoint routing:**  
 When using a router adapter, the `model` field determines which LLM backend handles this agent's calls. Different agents can use different providers and endpoints:
 
@@ -219,11 +220,14 @@ SLANG has exactly three primitives. Everything else is syntactic sugar.
 ### 5.1 `stake` — Produce & Send
 
 ```slang
-stake <function>(<args...>) -> <recipients>
+stake <function>(<args...>) -> <recipients> [if <cond>]
+  [output: { field: "type", ... }]
 ```
 
 Executes a semantic function and delivers the result to one or more recipients.
 The function name is a **semantic label** — it tells the LLM *what* to do, not a code reference.
+
+The optional `output:` block declares a **structured output contract**. The runtime injects the schema into the LLM prompt, forcing the response to include a JSON object with the specified fields. Field types can be `"string"`, `"number"`, or `"boolean"`.
 
 **Examples:**
 
@@ -245,6 +249,10 @@ stake validate(data, against: ["margin > 20%", "growth > 5%"]) -> @Analyst
 
 -- With condition
 stake retry(analysis) -> @Critic if feedback.rejected
+
+-- With structured output contract
+stake review(draft) -> @Decider
+  output: { approved: "boolean", score: "number", notes: "string" }
 ```
 
 ### 5.2 `await` — Receive & Depend
@@ -547,16 +555,20 @@ agent_decl      = "agent" IDENT "{" agent_body "}" ;
 
 agent_body      = { agent_meta | operation } ;
 
-agent_meta      = role_decl | model_decl | tools_decl ;
+agent_meta      = role_decl | model_decl | tools_decl | retry_decl ;
 
 role_decl       = "role" ":" STRING ;
 model_decl      = "model" ":" STRING ;
 tools_decl      = "tools" ":" list_literal ;
+retry_decl      = "retry" ":" NUMBER ;
 
 (* Operations *)
 operation       = stake_op | await_op | commit_op | escalate_op | when_block ;
 
-stake_op        = "stake" func_call "->" recipient_list [ condition ] ;
+stake_op        = "stake" func_call "->" recipient_list [ condition ] [ output_schema ] ;
+
+output_schema   = "output" ":" "{" output_field { "," output_field } "}" ;
+output_field    = IDENT ":" STRING ;
 
 await_op        = "await" IDENT "<-" source_list [ "(" await_opts ")" ] ;
 
@@ -621,7 +633,7 @@ list_literal    = "[" [ expression { "," expression } ] "]" ;
 ```
 flow, agent, stake, await, commit, escalate, import, as,
 when, if, converge, budget, role, model, tools,
-tokens, rounds, time, count, reason,
+tokens, rounds, time, count, reason, retry, output,
 true, false,
 @out, @all, @any, @Human
 ```

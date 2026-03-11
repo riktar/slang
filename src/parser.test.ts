@@ -598,4 +598,80 @@ describe("Parser", () => {
       assert.throws(() => parse('flow "t" { foobar }'), ParseError);
     });
   });
+
+  // ─── v0.2: retry + output ───
+
+  describe("retry meta", () => {
+    it("parses retry in agent meta", () => {
+      const agent = firstAgent(`
+        flow "t" {
+          agent A {
+            retry: 3
+            stake run() -> @out
+            commit
+          }
+        }
+      `);
+      assert.equal(agent.meta.retry, 3);
+    });
+
+    it("retry is optional (defaults to undefined)", () => {
+      const agent = firstAgent(`
+        flow "t" {
+          agent A {
+            stake run() -> @out
+            commit
+          }
+        }
+      `);
+      assert.equal(agent.meta.retry, undefined);
+    });
+  });
+
+  describe("output schema", () => {
+    it("parses output schema on stake op", () => {
+      const op = firstOp<StakeOp>(`
+        flow "t" {
+          agent A {
+            stake review("text") -> @B
+              output: { approved: "boolean", score: "number" }
+            commit
+          }
+        }
+      `, "StakeOp");
+      assert.ok(op.output);
+      assert.equal(op.output!.fields.length, 2);
+      assert.equal(op.output!.fields[0]!.name, "approved");
+      assert.equal(op.output!.fields[0]!.fieldType, "boolean");
+      assert.equal(op.output!.fields[1]!.name, "score");
+      assert.equal(op.output!.fields[1]!.fieldType, "number");
+    });
+
+    it("stake without output has undefined output", () => {
+      const op = firstOp<StakeOp>(`
+        flow "t" {
+          agent A {
+            stake run("task") -> @out
+            commit
+          }
+        }
+      `, "StakeOp");
+      assert.equal(op.output, undefined);
+    });
+
+    it("parses output with single field", () => {
+      const op = firstOp<StakeOp>(`
+        flow "t" {
+          agent A {
+            stake check("data") -> @B
+              output: { valid: "boolean" }
+            commit
+          }
+        }
+      `, "StakeOp");
+      assert.ok(op.output);
+      assert.equal(op.output!.fields.length, 1);
+      assert.equal(op.output!.fields[0]!.name, "valid");
+    });
+  });
 });

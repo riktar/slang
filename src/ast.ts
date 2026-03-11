@@ -53,6 +53,7 @@ export interface AgentMeta {
   role?: string;
   model?: string;
   tools?: string[];
+  retry?: number;
 }
 
 // ─── Operations ───
@@ -64,6 +65,16 @@ export interface StakeOp extends BaseNode {
   call: FuncCall;
   recipients: Recipient[];
   condition?: Expr;
+  output?: OutputSchema;
+}
+
+export interface OutputSchema {
+  fields: OutputField[];
+}
+
+export interface OutputField {
+  name: string;
+  fieldType: string; // "string" | "number" | "boolean"
 }
 
 export interface AwaitOp extends BaseNode {

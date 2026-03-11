@@ -30,7 +30,7 @@ Most agent frameworks require you to write glue code in Python or TypeScript. **
 | LLMs can't understand framework boilerplate | Three primitives: `stake`, `await`, `commit` |
 | Switching LLM providers = rewrite | Pluggable adapters (MCP Sampling, OpenAI, Anthropic, Ollama, any OpenAI-compatible) + router adapter for multi-provider flows |
 | No tooling? No execution. | **Zero-setup mode** — paste a prompt, any LLM becomes an interpreter |
-| Hard to debug agent communication | Built-in dependency graph, deadlock detection, budget limits |
+| Hard to debug agent communication | Built-in dependency graph, deadlock detection, extended static analysis, budget limits |
 
 ### Three primitives. That's the whole language.
 
@@ -281,13 +281,15 @@ flow "my-flow" {
 
 ### Key Features
 
-- **Agents** with natural language `role:`, `model:` selection, `tools:` lists
+- **Agents** with natural language `role:`, `model:` selection, `tools:` lists, `retry:` count
+- **Structured output** — `output: { field: "type" }` contracts on `stake` operations
+- **Retry with backoff** — `retry: N` in agent meta; exponential backoff on LLM failures
 - **Conditionals** — inline `if` on any operation; block `when expr { ... }`
 - **Budget & convergence** — `budget: tokens(N), rounds(N), time(Ns)` + custom convergence conditions
 - **Composition** — `import "other.slang" as alias` for reusable flows
 - **Special recipients** — `@out` (flow output), `@all` (broadcast), `@Human` (human-in-the-loop)
 - **State access** — `@Agent.output`, `@Agent.status`, `round`, `tokens_used`
-- **Deadlock detection** — static analysis catches circular dependencies before execution
+- **Extended static analysis** — deadlocks, orphan agents, missing commits, unknown recipients
 - **Parallel execution** — independent agents dispatch LLM calls concurrently within each round
 - **Multi-endpoint routing** — route agents to different LLM providers via `model:` + router adapter
 
@@ -409,14 +411,19 @@ const result = await runFlow(source, {
 ### Static Analysis
 
 ```typescript
-import { parse, resolveDeps, detectDeadlocks } from '@riktar/slang'
+import { parse, resolveDeps, detectDeadlocks, analyzeFlow } from '@riktar/slang'
 
 const program = parse(source)
-const graph = resolveDeps(program.flows[0])
+const flow = program.flows[0]
+const graph = resolveDeps(flow)
 const deadlocks = detectDeadlocks(graph)
+const diagnostics = analyzeFlow(flow)
 
 if (deadlocks.length > 0) {
   console.error('Deadlock detected:', deadlocks)
+}
+for (const d of diagnostics) {
+  console.warn(`[${d.level}] ${d.message}`)
 }
 ```
 
@@ -519,7 +526,7 @@ npx --package @riktar/slang slang-mcp
 |------|-------------|
 | `run_flow` | Execute a SLANG flow, returns final state and outputs |
 | `parse_flow` | Parse source to AST JSON |
-| `check_flow` | Dependency graph analysis + deadlock detection |
+| `check_flow` | Dependency graph analysis + deadlock detection + extended diagnostics |
 | `get_zero_setup_prompt` | Get the zero-setup system prompt |
 
 ### Claude Desktop Config
@@ -562,7 +569,7 @@ Source (.slang) → Lexer → Parser → AST → Resolver → DepGraph → Runti
 |-----------|-------------|
 | **Lexer** | Hand-written tokenizer with line/column tracking |
 | **Parser** | Recursive-descent parser producing a fully typed AST |
-| **Resolver** | Builds dependency graphs, detects deadlocks via DFS |
+| **Resolver** | Builds dependency graphs, detects deadlocks, extended static analysis |
 | **Runtime** | Async round-based scheduler with mailbox communication and parallel dispatch |
 | **Adapters** | Pluggable LLM backends (MCP Sampling, OpenAI, Anthropic, Router, Echo) |
 

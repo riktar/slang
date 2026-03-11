@@ -6,7 +6,7 @@ import type {
   AgentDecl, AgentMeta, Operation, StakeOp, AwaitOp,
   CommitOp, EscalateOp, WhenBlock, FuncCall, Argument,
   Recipient, Source, ConvergeStmt, BudgetStmt, BudgetItem,
-  Expr, Span, Position,
+  Expr, Span, Position, OutputSchema, OutputField,
 } from "./ast.js";
 
 export class ParseError extends Error {
@@ -151,6 +151,10 @@ class Parser {
         this.advance();
         this.expect(TokenType.Colon);
         meta.tools = this.parseToolsList();
+      } else if (t.type === TokenType.Retry) {
+        this.advance();
+        this.expect(TokenType.Colon);
+        meta.retry = Number(this.expect(TokenType.Number).value);
       } else {
         operations.push(this.parseOperation());
       }
@@ -196,7 +200,25 @@ class Parser {
     this.expect(TokenType.Arrow);
     const recipients = this.parseRecipientList();
     const condition = this.parseOptionalCondition();
-    return { type: "StakeOp", call, recipients, condition, span: this.spanFrom(start) };
+    const output = this.parseOptionalOutput();
+    return { type: "StakeOp", call, recipients, condition, output, span: this.spanFrom(start) };
+  }
+
+  private parseOptionalOutput(): OutputSchema | undefined {
+    if (!this.check(TokenType.Output)) return undefined;
+    this.advance();
+    this.expect(TokenType.Colon);
+    this.expect(TokenType.LBrace);
+    const fields: OutputField[] = [];
+    while (!this.check(TokenType.RBrace) && !this.check(TokenType.EOF)) {
+      const name = this.expect(TokenType.Ident).value;
+      this.expect(TokenType.Colon);
+      const fieldType = this.expect(TokenType.String).value;
+      fields.push({ name, fieldType });
+      this.match(TokenType.Comma);
+    }
+    this.expect(TokenType.RBrace);
+    return { fields };
   }
 
   private parseFuncCall(): FuncCall {

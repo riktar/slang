@@ -654,4 +654,130 @@ describe("Runtime", () => {
       assert.ok(calls.includes("fallback"));
     });
   });
+
+  // ─── v0.2: Retry ───
+
+  describe("Retry", () => {
+    it("retries on adapter failure then succeeds", async () => {
+      let callCount = 0;
+      const flaky: LLMAdapter = {
+        name: "flaky/test",
+        async call(): Promise<LLMResponse> {
+          callCount++;
+          if (callCount === 1) throw new Error("network error");
+          return { content: "ok", tokensUsed: 5 };
+        },
+      };
+
+      const events: RuntimeEvent[] = [];
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            retry: 3
+            stake work() -> @out
+            commit
+          }
+          converge when: all_committed
+        }
+      `, { adapter: flaky, onEvent: collectEvents(events) });
+
+      assert.equal(state.status, "converged");
+      assert.equal(callCount, 2);
+      assert.ok(events.some(e => e.type === "agent_retry"));
+    });
+
+    it("propagates error when all retries exhausted", async () => {
+      const alwaysFails: LLMAdapter = {
+        name: "fail/test",
+        async call(): Promise<LLMResponse> {
+          throw new Error("permanent error");
+        },
+      };
+
+      await assert.rejects(
+        () => runFlow(`
+          flow "t" {
+            agent A {
+              retry: 2
+              stake work() -> @out
+              commit
+            }
+            converge when: all_committed
+          }
+        `, { adapter: alwaysFails }),
+        /permanent error/
+      );
+    });
+
+    it("no retry by default (retry: 1)", async () => {
+      const fails: LLMAdapter = {
+        name: "fail/test",
+        async call(): Promise<LLMResponse> {
+          throw new Error("fail");
+        },
+      };
+
+      await assert.rejects(
+        () => runFlow(`
+          flow "t" {
+            agent A {
+              stake work() -> @out
+              commit
+            }
+            converge when: all_committed
+          }
+        `, { adapter: fails }),
+        /fail/
+      );
+    });
+  });
+
+  // ─── v0.2: Structured Output (JSON extraction) ───
+
+  describe("Structured Output", () => {
+    it("extracts fields from fenced JSON block", async () => {
+      const adapter = createFixedAdapter('Here is my review:\n```json\n{"approved": true, "score": 0.9}\n```\nCONFIDENCE: 0.8');
+
+      const state = await runFlow(`
+        flow "t" {
+          agent Reviewer {
+            stake review("check this") -> @Decider
+              output: { approved: "boolean", score: "number" }
+            commit
+          }
+          agent Decider {
+            await result <- @Reviewer
+            commit if result.approved
+          }
+          converge when: all_committed
+        }
+      `, { adapter });
+
+      assert.equal(state.status, "converged");
+      const decider = state.agents.get("Decider")!;
+      assert.equal(decider.committed, true);
+    });
+
+    it("extracts fields from raw JSON in response", async () => {
+      const adapter = createFixedAdapter('{"approved": true, "score": 0.95}');
+
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            stake check("data") -> @B
+              output: { approved: "boolean" }
+            commit
+          }
+          agent B {
+            await result <- @A
+            commit if result.approved
+          }
+          converge when: all_committed
+        }
+      `, { adapter });
+
+      assert.equal(state.status, "converged");
+      assert.equal(state.agents.get("B")!.committed, true);
+    });
+  });
 });

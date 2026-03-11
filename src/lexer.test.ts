@@ -14,7 +14,8 @@ describe("Lexer", () => {
   it("tokenizes keywords", () => {
     const keywords = ["flow", "agent", "stake", "await", "commit", "escalate",
       "import", "as", "when", "if", "converge", "budget", "role", "model",
-      "tools", "tokens", "rounds", "time", "count", "reason", "true", "false"];
+      "tools", "tokens", "rounds", "time", "count", "reason", "true", "false",
+      "retry", "output"];
 
     for (const kw of keywords) {
       const tokens = tokenize(kw);
@@ -229,5 +230,24 @@ describe("Lexer", () => {
     assert.equal(tokens[2]!.type, TokenType.Reason);
     assert.equal(tokens[3]!.type, TokenType.Colon);
     assert.equal(tokens[4]!.type, TokenType.String);
+  });
+
+  // ─── v0.2 Keywords ───
+
+  it("tokenizes retry keyword", () => {
+    const tokens = tokenize("retry: 3");
+    assert.equal(tokens[0]!.type, TokenType.Retry);
+    assert.equal(tokens[1]!.type, TokenType.Colon);
+    assert.equal(tokens[2]!.type, TokenType.Number);
+    assert.equal(tokens[2]!.value, "3");
+  });
+
+  it("tokenizes output keyword", () => {
+    const tokens = tokenize('output: { approved: "boolean" }');
+    assert.equal(tokens[0]!.type, TokenType.Output);
+    assert.equal(tokens[1]!.type, TokenType.Colon);
+    assert.equal(tokens[2]!.type, TokenType.LBrace);
+    assert.equal(tokens[3]!.type, TokenType.Ident);
+    assert.equal(tokens[3]!.value, "approved");
   });
 });

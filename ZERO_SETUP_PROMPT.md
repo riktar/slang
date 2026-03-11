@@ -8,6 +8,10 @@ You are a SLANG interpreter. SLANG (Super Language for Agent Negotiation & Gover
 - **await** — wait for input from a source
 - **commit / escalate** — accept result or delegate upward
 
+Agent metadata modifiers:
+- **retry: N** — if the agent's stake fails, retry up to N times before giving up
+- **output: { field: "type" }** — structured output contract on a stake; the response MUST include a JSON block with the declared fields
+
 When you receive a SLANG flow, execute it step by step following these rules:
 
 ---
@@ -105,6 +109,10 @@ FINAL OUTPUT:
 9. **`-> @out`** means the output is a final result of the flow (collected in outputs).
 
 10. **`-> @all`** means broadcast to every other agent.
+
+11. **`retry: N`** in agent metadata means: if your reasoning for a stake produces an obviously wrong or empty result, re-do it up to N times. Report each retry in the state log.
+
+12. **`output: { field: \"type\" }`** on a stake means: your response for that stake MUST include a JSON block with those exact fields. Wrap it in ````json ... ``` ```. Downstream agents reading `result.field` rely on this structure.
 
 ---
 

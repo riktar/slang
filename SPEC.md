@@ -1,6 +1,6 @@
 # SLANG — Super Language for Agent Negotiation & Governance
 
-## Specification v0.1.0
+## Specification v0.2.0
 
 ---
 
@@ -50,12 +50,14 @@ An agent can optionally have:
 - A `role` descriptor (natural language string describing its purpose)
 - A `model` preference (e.g., `model: "claude-sonnet"`)
 - A `tools` list (e.g., `tools: [web_search, code_exec]`)
+- A `retry` count (e.g., `retry: 3`) — max LLM call attempts on failure
 
 ```slang
 agent Researcher {
   role: "Expert web researcher focused on primary sources"
   model: "claude-sonnet"
   tools: [web_search]
+  retry: 3
 
   stake gather(topic) -> @Analyst
 }
@@ -67,12 +69,14 @@ agent Researcher {
 
 ```slang
 stake <function>(<args...>) -> @<recipient>
+  [output: { field: "type", ... }]
 ```
 
 - Executes `function` with the given arguments
 - Sends the result to `recipient`
 - The function name is a **semantic label**, not a code reference — it tells the LLM *what* to do
 - Arguments can be literals, references to previous data, or natural language descriptions
+- The optional `output:` block declares a **structured output contract** — the runtime injects the schema into the LLM prompt, ensuring the response contains a JSON object with the specified fields
 
 Multiple recipients:
 ```slang
@@ -336,13 +340,58 @@ const router = createRouterAdapter({
 });
 ```
 
-### 5.4 Execution Modes
+### 5.4 Retry & Error Handling
+
+When an agent declares `retry: N`, the runtime wraps each `stake` LLM call in a retry loop with exponential backoff:
+
+- Attempt 1: immediate
+- Attempt 2: after 1s
+- Attempt 3: after 2s
+- Attempt N: after min(2^(N-2)s, 8s)
+
+If all attempts fail, the error propagates. The default is `retry: 1` (no retry).
+
+The runtime emits `agent_retry` events so callers can monitor retry behavior.
+
+### 5.5 Structured Output Contracts
+
+The `output:` block on a `stake` operation declares the expected schema of the LLM response:
+
+```slang
+stake review(draft) -> @Decider
+  output: { approved: "boolean", score: "number", notes: "string" }
+```
+
+The runtime injects a JSON schema requirement into the system prompt, asking the LLM to include a ```json block with the specified fields. The `resolveExprValue` engine then extracts JSON from the response using a multi-stage pipeline:
+
+1. Try fenced ````json` block extraction
+2. Try raw `JSON.parse` on the full response
+3. Try extracting the first `{ ... }` block from the response
+4. Fall back to regex patterns for well-known fields (`confidence`, `approved`, `rejected`, `score`)
+
+This makes dot-access expressions like `result.approved` reliable even when the LLM wraps its JSON in prose.
+
+### 5.6 Extended Static Analysis
+
+The `analyzeFlow()` function performs extended static checks beyond deadlock detection:
+
+| Check | Level | Description |
+|-------|-------|-------------|
+| Missing converge | warning | Flow has no converge statement |
+| Missing budget | warning | Flow has no budget — default limits apply |
+| Unknown recipient | error | `stake` directs to an agent not declared in the flow |
+| Unknown source | error | `await` from an agent not declared in the flow |
+| No commit | warning | Agent never commits — it will never signal completion |
+
+The `check_flow` MCP tool now returns these diagnostics alongside deadlock analysis.
+
+### 5.7 Execution Modes
 
 **Zero-Setup Mode**: An LLM reads the flow and executes it turn-by-turn in a single conversation, simulating each agent in sequence. The LLM maintains state as structured text.
 
 **Thin Runtime Mode**: A scheduler program parses the flow, maintains state, and dispatches each agent as a separate LLM call. Supports real tools, parallel execution, and different models per agent.
 
-### 5.5 Termination
+### 5.8 Termination
 
 A flow terminates when:
 1. The `converge` condition is met (success)
@@ -350,7 +399,7 @@ A flow terminates when:
 3. An `escalate @Human` is reached (human-in-the-loop)
 4. A deadlock is detected — no agent can proceed (error)
 
-### 5.6 Round Model
+### 5.9 Round Model
 
 A **round** is one full pass through all currently executable agents. The `budget: rounds(N)` constraint limits how many full passes occur. Within a round, independent agents run in parallel (see §5.2).
 
@@ -361,7 +410,7 @@ A **round** is one full pass through all currently executable agents. The `budge
 ```
 flow, agent, stake, await, commit, escalate, import, as,
 when, if, converge, budget, role, model, tools,
-tokens, rounds, time, count, reason,
+tokens, rounds, time, count, reason, retry, output,
 true, false,
 @out, @all, @any, @Human
 ```

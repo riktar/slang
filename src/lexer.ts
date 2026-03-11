@@ -30,6 +30,8 @@ export enum TokenType {
   Time = "time",
   Count = "count",
   Reason = "reason",
+  Retry = "retry",
+  Output = "output",
   True = "true",
   False = "false",
 
@@ -82,6 +84,8 @@ const KEYWORDS: Record<string, TokenType> = {
   time: TokenType.Time,
   count: TokenType.Count,
   reason: TokenType.Reason,
+  retry: TokenType.Retry,
+  output: TokenType.Output,
   true: TokenType.True,
   false: TokenType.False,
 };

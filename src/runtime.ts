@@ -59,6 +59,7 @@ export type RuntimeEvent =
   | { type: "agent_output"; agent: string; output: string }
   | { type: "agent_commit"; agent: string; value: unknown }
   | { type: "agent_escalate"; agent: string; target: string; reason?: string }
+  | { type: "agent_retry"; agent: string; attempt: number; error: string }
   | { type: "flow_converged"; outputs: unknown[] }
   | { type: "flow_budget_exceeded"; round: number }
   | { type: "flow_deadlock"; agents: string[] }
@@ -274,30 +275,51 @@ async function executeStake(
   onEvent?.({ type: "agent_start", agent: agentDecl.name, operation: taskDescription });
 
   // Build prompt for LLM
-  const messages = buildAgentPrompt(agentDecl, agentState, taskDescription, flowState);
-  const response = await adapter.call(messages, agentDecl.meta.model);
-  flowState.tokensUsed += response.tokensUsed;
+  const messages = buildAgentPrompt(agentDecl, agentState, taskDescription, flowState, op);
 
-  agentState.output = response.content;
-  agentState.status = "idle";
-  onEvent?.({ type: "agent_output", agent: agentDecl.name, output: response.content });
+  // Retry with exponential backoff
+  const maxAttempts = agentDecl.meta.retry ?? 1;
+  let lastError: Error | undefined;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const response = await adapter.call(messages, agentDecl.meta.model);
+      flowState.tokensUsed += response.tokensUsed;
 
-  // Deliver to mailbox
-  for (const recipient of op.recipients) {
-    if (recipient.ref === "out") {
-      flowState.outputs.push(response.content);
-    } else if (recipient.ref === "all") {
-      for (const [name] of flowState.agents) {
-        if (name !== agentDecl.name) {
-          flowState.mailbox.set(`${agentDecl.name}->${name}`, response.content);
+      agentState.output = response.content;
+      agentState.status = "idle";
+      onEvent?.({ type: "agent_output", agent: agentDecl.name, output: response.content });
+
+      // Deliver to mailbox
+      for (const recipient of op.recipients) {
+        if (recipient.ref === "out") {
+          flowState.outputs.push(response.content);
+        } else if (recipient.ref === "all") {
+          for (const [name] of flowState.agents) {
+            if (name !== agentDecl.name) {
+              flowState.mailbox.set(`${agentDecl.name}->${name}`, response.content);
+            }
+          }
+        } else {
+          flowState.mailbox.set(`${agentDecl.name}->${recipient.ref}`, response.content);
         }
       }
-    } else {
-      flowState.mailbox.set(`${agentDecl.name}->${recipient.ref}`, response.content);
+
+      return "continue";
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      if (attempt < maxAttempts) {
+        onEvent?.({ type: "agent_retry", agent: agentDecl.name, attempt, error: lastError.message });
+        await sleep(Math.min(1000 * 2 ** (attempt - 1), 8000));
+      }
     }
   }
 
-  return "continue";
+  // All retries exhausted — the error propagates
+  throw lastError;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function executeAwait(
@@ -408,6 +430,7 @@ function buildAgentPrompt(
   agentState: AgentState,
   taskDescription: string,
   flowState: FlowState,
+  stakeOp?: StakeOp,
 ): LLMMessage[] {
   let system = `You are agent "${agentDecl.name}" in a SLANG multi-agent workflow "${flowState.name}".`;
   if (agentDecl.meta.role) {
@@ -416,6 +439,15 @@ function buildAgentPrompt(
   system += `\n\nYour task: ${taskDescription}`;
   system += `\n\nRespond with substantive, real content. Be thorough and precise.`;
   system += `\nAt the end of your response, add a line: CONFIDENCE: <0.0-1.0>`;
+
+  // Structured output schema
+  if (stakeOp?.output) {
+    const schemaLines = stakeOp.output.fields.map(
+      (f) => `  "${f.name}": <${f.fieldType}>`
+    );
+    system += `\n\nYou MUST include a JSON block in your response with this exact schema:`;
+    system += `\n\`\`\`json\n{\n${schemaLines.join(",\n")}\n}\n\`\`\``;
+  }
 
   let user = `Execute your task now.`;
   const contextParts: string[] = [];
@@ -500,28 +532,27 @@ function resolveExprValue(expr: Expr, agentState: AgentState, flowState: FlowSta
           const match = obj.match(/CONFIDENCE:\s*([\d.]+)/i);
           return match ? parseFloat(match[1]!) : 0.5;
         }
-        // Look for "approved": true/false pattern
+
+        // Try structured JSON extraction first
+        const parsed = extractJSON(obj);
+        if (parsed && expr.property in parsed) {
+          return parsed[expr.property];
+        }
+
+        // Fallback: regex patterns for well-known fields
         if (expr.property === "approved") {
           const match = obj.match(/"?approved"?\s*[:=]\s*(true|false)/i);
           return match ? match[1]!.toLowerCase() === "true" : false;
         }
-        // Look for "rejected": true/false pattern
         if (expr.property === "rejected") {
           const match = obj.match(/"?rejected"?\s*[:=]\s*(true|false)/i);
           return match ? match[1]!.toLowerCase() === "true" : false;
         }
-        // Look for "score": <number> pattern
         if (expr.property === "score") {
           const match = obj.match(/"?score"?\s*[:=]\s*([\d.]+)/i);
           return match ? parseFloat(match[1]!) : 0;
         }
-        // Generic: try JSON parse
-        try {
-          const parsed = JSON.parse(obj);
-          return parsed[expr.property];
-        } catch {
-          return undefined;
-        }
+        return undefined;
       }
       return obj[expr.property];
     }
@@ -573,5 +604,23 @@ function extractBudgetValue(budget: BudgetStmt | undefined, kind: BudgetItem["ki
   const item = budget.items.find((i) => i.kind === kind);
   if (!item) return undefined;
   if (item.value.type === "NumberLit") return item.value.value;
+  return undefined;
+}
+
+/** Extract the first JSON object from an LLM response string. */
+function extractJSON(text: string): Record<string, unknown> | undefined {
+  // Try fenced ```json block first
+  const fenced = text.match(/```json\s*([\s\S]*?)```/);
+  if (fenced) {
+    try { return JSON.parse(fenced[1]!.trim()); } catch { /* fall through */ }
+  }
+  // Try raw JSON parse
+  try { return JSON.parse(text); } catch { /* fall through */ }
+  // Try to find first { ... } block
+  const braceStart = text.indexOf("{");
+  const braceEnd = text.lastIndexOf("}");
+  if (braceStart !== -1 && braceEnd > braceStart) {
+    try { return JSON.parse(text.slice(braceStart, braceEnd + 1)); } catch { /* give up */ }
+  }
   return undefined;
 }

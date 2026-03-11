@@ -12,7 +12,7 @@ import {
 import { readFileSync } from "fs";
 import { resolve } from "path";
 import { parse } from "./parser.js";
-import { resolveDeps, detectDeadlocks } from "./resolver.js";
+import { resolveDeps, detectDeadlocks, analyzeFlow } from "./resolver.js";
 import { runFlow } from "./runtime.js";
 import {
   createOpenAIAdapter,
@@ -48,7 +48,7 @@ function getAdapter() {
 // ─── MCP Server ───
 
 const server = new Server(
-  { name: "slang", version: "0.1.0" },
+  { name: "slang", version: "0.2.0" },
   { capabilities: { tools: {} } },
 );
 
@@ -202,6 +202,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               case "agent_escalate":
                 logText += `  [${ev.agent}] escalated to ${ev.target}\n`;
                 break;
+              case "agent_retry":
+                logText += `  [${ev.agent}] retry attempt ${ev.attempt}: ${ev.error}\n`;
+                break;
               case "flow_converged":
                 logText += `\nFlow converged.\n`;
                 break;
@@ -276,6 +279,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
         const graph = resolveDeps(flow);
         const deadlocks = detectDeadlocks(graph);
+        const diagnostics = analyzeFlow(flow);
         const report = {
           agents: Object.fromEntries(
             [...graph.agents.entries()].map(([k, v]) => [k, v]),
@@ -283,7 +287,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           initiallyReady: graph.ready,
           blocked: graph.blocked,
           deadlocks,
-          ok: deadlocks.length === 0,
+          diagnostics,
+          ok: deadlocks.length === 0 && diagnostics.every((d) => d.level !== "error"),
         };
         return { content: [{ type: "text", text: JSON.stringify(report, null, 2) }] };
       } catch (err: unknown) {

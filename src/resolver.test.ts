@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { parse } from "./parser.js";
-import { resolveDeps, detectDeadlocks, type DepGraph } from "./resolver.js";
+import { resolveDeps, detectDeadlocks, analyzeFlow, type DepGraph, type FlowDiagnostic } from "./resolver.js";
 import type { FlowDecl } from "./ast.js";
 
 // ─── Helpers ───
@@ -245,6 +245,88 @@ describe("Resolver", () => {
       assert.equal(graph.agents.size, 0);
       assert.equal(graph.ready.length, 0);
       assert.equal(graph.blocked.length, 0);
+    });
+  });
+
+  // ─── v0.2: Extended Static Analysis ───
+
+  describe("analyzeFlow", () => {
+    function diagOf(source: string): FlowDiagnostic[] {
+      const program = parse(source);
+      return analyzeFlow(program.flows[0]!);
+    }
+
+    it("warns when no converge statement", () => {
+      const diags = diagOf(`
+        flow "t" {
+          agent A { stake run() -> @out  commit }
+        }
+      `);
+      assert.ok(diags.some(d => d.level === "warning" && d.message.includes("converge")));
+    });
+
+    it("warns when no budget statement", () => {
+      const diags = diagOf(`
+        flow "t" {
+          agent A { stake run() -> @out  commit }
+          converge when: all_committed
+        }
+      `);
+      assert.ok(diags.some(d => d.level === "warning" && d.message.includes("budget")));
+    });
+
+    it("no warnings for well-formed flow", () => {
+      const diags = diagOf(`
+        flow "t" {
+          agent A {
+            stake run() -> @out
+            commit
+          }
+          converge when: all_committed
+          budget: rounds(5)
+        }
+      `);
+      const errors = diags.filter(d => d.level === "error");
+      assert.equal(errors.length, 0);
+    });
+
+    it("errors on stake to unknown agent", () => {
+      const diags = diagOf(`
+        flow "t" {
+          agent A {
+            stake run() -> @Ghost
+            commit
+          }
+          converge when: all_committed
+          budget: rounds(5)
+        }
+      `);
+      assert.ok(diags.some(d => d.level === "error" && d.message.includes("@Ghost")));
+    });
+
+    it("errors on await from unknown agent", () => {
+      const diags = diagOf(`
+        flow "t" {
+          agent A {
+            await data <- @Missing
+            commit
+          }
+          converge when: all_committed
+          budget: rounds(5)
+        }
+      `);
+      assert.ok(diags.some(d => d.level === "error" && d.message.includes("@Missing")));
+    });
+
+    it("warns when agent has no commit", () => {
+      const diags = diagOf(`
+        flow "t" {
+          agent A { stake run() -> @out }
+          converge when: all_committed
+          budget: rounds(5)
+        }
+      `);
+      assert.ok(diags.some(d => d.level === "warning" && d.message.includes("no commit")));
     });
   });
 });
