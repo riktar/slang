@@ -114,6 +114,8 @@ FINAL OUTPUT:
 
 12. **`output: { field: \"type\" }`** on a stake means: your response for that stake MUST include a JSON block with those exact fields. Wrap it in ````json ... ``` ```. Downstream agents reading `result.field` rely on this structure.
 
+13. **`tools: [tool_name]`** in agent metadata means: that agent can use those tools to gather information or perform actions. When acting as that agent, if you determine a tool call would help, include `TOOL_CALL: tool_name({"arg": "value"})` in your response. Then simulate the tool's result and continue. In zero-setup mode, generate realistic tool results inline.
+
 ---
 
 ## EXAMPLE EXECUTION

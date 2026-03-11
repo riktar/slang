@@ -1,7 +1,7 @@
 # SLANG Language Playbook
 
 > Complete syntax reference, formal grammar, and annotated examples for  
-> **SLANG v0.2.0** — Super Language for Agent Negotiation & Governance.
+> **SLANG v0.3.0** — Super Language for Agent Negotiation & Governance.
 
 ---
 
@@ -518,6 +518,53 @@ A flow terminates when:
 ### Round Model
 
 A **round** is one full pass through all currently executable agents. Within a round, independent agents run in parallel. The `budget: rounds(N)` constraint limits how many full passes occur.
+
+### Checkpoint & Resume
+
+The runtime can **checkpoint** the `FlowState` after each round, enabling crash recovery and persistence:
+
+```typescript
+const state = await runFlow(source, {
+  adapter,
+  checkpoint: async (snapshot) => {
+    await fs.writeFile('cp.json', serializeFlowState(snapshot));
+  },
+});
+```
+
+To resume a previously interrupted flow:
+
+```typescript
+const saved = deserializeFlowState(await fs.readFile('cp.json', 'utf8'));
+const state = await runFlow(source, { adapter, resumeFrom: saved });
+```
+
+The `serializeFlowState` / `deserializeFlowState` helpers handle `Map` serialization. The runtime emits `checkpoint` events.
+
+### Functional Tools
+
+When an agent declares `tools: [web_search]` **and** the runtime provides matching tool handlers, the tools become functional:
+
+```typescript
+const state = await runFlow(source, {
+  adapter,
+  tools: {
+    web_search: async (args) => {
+      return await fetchResults(args.query as string);
+    },
+  },
+});
+```
+
+During a `stake` operation, the LLM can invoke tools by including `TOOL_CALL: tool_name({"arg": "value"})` in its response. The runtime:
+
+1. Detects the tool call pattern
+2. Executes the matching handler
+3. Appends the result to the conversation
+4. Re-calls the LLM with the tool result
+5. Repeats until no more tool calls (max 10 per stake)
+
+Only tools declared in the agent's `tools:` metadata **and** provided in the runtime options are available. The runtime emits `tool_call` and `tool_result` events.
 
 ---
 

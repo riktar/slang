@@ -48,7 +48,7 @@ function getAdapter() {
 // ─── MCP Server ───
 
 const server = new Server(
-  { name: "slang", version: "0.2.0" },
+  { name: "slang", version: "0.3.0" },
   { capabilities: { tools: {} } },
 );
 
@@ -204,6 +204,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 break;
               case "agent_retry":
                 logText += `  [${ev.agent}] retry attempt ${ev.attempt}: ${ev.error}\n`;
+                break;
+              case "tool_call":
+                logText += `  [${ev.agent}] tool call: ${ev.tool}(${JSON.stringify(ev.args)})\n`;
+                break;
+              case "tool_result":
+                logText += `  [${ev.agent}] tool result: ${ev.result.slice(0, 200)}\n`;
+                break;
+              case "checkpoint":
+                logText += `  [checkpoint] round ${ev.round}\n`;
                 break;
               case "flow_converged":
                 logText += `\nFlow converged.\n`;

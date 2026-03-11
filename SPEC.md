@@ -1,6 +1,6 @@
 # SLANG — Super Language for Agent Negotiation & Governance
 
-## Specification v0.2.0
+## Specification v0.3.0
 
 ---
 
@@ -385,13 +385,104 @@ The `analyzeFlow()` function performs extended static checks beyond deadlock det
 
 The `check_flow` MCP tool now returns these diagnostics alongside deadlock analysis.
 
-### 5.7 Execution Modes
+### 5.7 Checkpoint & Resume
+
+The runtime supports **checkpointing** — persisting a snapshot of the `FlowState` after each round so that a flow can be resumed from that point if the process crashes or is interrupted.
+
+#### Checkpoint Callback
+
+Pass a `checkpoint` function in `RuntimeOptions`:
+
+```typescript
+const state = await runFlow(source, {
+  adapter,
+  checkpoint: async (snapshot) => {
+    // snapshot is a deep clone of the FlowState at this point
+    const json = serializeFlowState(snapshot);
+    await fs.writeFile('checkpoint.json', json);
+  },
+});
+```
+
+The callback is invoked:
+1. After each completed round (while the flow is still running)
+2. After the flow terminates (final state)
+
+#### Resume from Checkpoint
+
+Pass a `resumeFrom` state to continue a previously interrupted flow:
+
+```typescript
+const saved = deserializeFlowState(
+  await fs.readFile('checkpoint.json', 'utf8')
+);
+const state = await runFlow(source, {
+  adapter,
+  resumeFrom: saved,
+});
+```
+
+The runtime skips agent initialization and continues from the stored `opIndex`, `bindings`, `mailbox`, and `round` values.
+
+#### Serialization
+
+`FlowState` contains `Map` objects which are not JSON-serializable. The runtime exports two helpers:
+
+- `serializeFlowState(state: FlowState): string` — converts `Map` instances to a JSON-safe representation
+- `deserializeFlowState(json: string): FlowState` — restores `Map` instances from JSON
+
+The runtime emits `{ type: "checkpoint", round }` events when a checkpoint occurs.
+
+### 5.8 Functional Tools
+
+When an agent declares `tools: [web_search, code_exec]`, the runtime can make those tools **functional** — actually invoking real tool handlers during a `stake` operation.
+
+#### Providing Tool Handlers
+
+Pass a `tools` record in `RuntimeOptions`:
+
+```typescript
+const state = await runFlow(source, {
+  adapter,
+  tools: {
+    web_search: async (args) => {
+      const results = await search(args.query as string);
+      return JSON.stringify(results);
+    },
+    code_exec: async (args) => {
+      return eval(args.code as string);
+    },
+  },
+});
+```
+
+Each handler receives a `Record<string, unknown>` of arguments and must return a `string` result.
+
+#### How It Works
+
+1. The runtime checks each agent's `tools:` declaration against the provided `RuntimeOptions.tools` record
+2. Only tools that appear in **both** the agent declaration and the runtime options are made available
+3. Available tool names are injected into the system prompt with a calling convention:
+   ```
+   TOOL_CALL: web_search({"query": "AI trends"})
+   ```
+4. After the LLM responds, the runtime scans for `TOOL_CALL:` patterns
+5. If found, the matching handler is invoked, the result is appended to the conversation, and the LLM is called again
+6. This loop continues until the LLM responds without a `TOOL_CALL` or until 10 tool calls are reached (safety limit)
+
+The runtime emits two event types:
+- `{ type: "tool_call", agent, tool, args }` — before executing a tool handler
+- `{ type: "tool_result", agent, tool, result }` — after the handler returns
+
+If `tools:` is declared in the `.slang` file but no matching handlers exist in `RuntimeOptions.tools`, the tools are silently ignored (backward compatible with v0.2).
+
+### 5.9 Execution Modes
 
 **Zero-Setup Mode**: An LLM reads the flow and executes it turn-by-turn in a single conversation, simulating each agent in sequence. The LLM maintains state as structured text.
 
 **Thin Runtime Mode**: A scheduler program parses the flow, maintains state, and dispatches each agent as a separate LLM call. Supports real tools, parallel execution, and different models per agent.
 
-### 5.8 Termination
+### 5.10 Termination
 
 A flow terminates when:
 1. The `converge` condition is met (success)
@@ -399,7 +490,7 @@ A flow terminates when:
 3. An `escalate @Human` is reached (human-in-the-loop)
 4. A deadlock is detected — no agent can proceed (error)
 
-### 5.9 Round Model
+### 5.11 Round Model
 
 A **round** is one full pass through all currently executable agents. The `budget: rounds(N)` constraint limits how many full passes occur. Within a round, independent agents run in parallel (see §5.2).
 

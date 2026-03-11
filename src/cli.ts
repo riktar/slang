@@ -17,7 +17,7 @@ import {
 
 function printUsage(): void {
   console.log(`
-  slang — SLANG interpreter v0.1.0
+  slang — SLANG interpreter v0.3.0
 
   USAGE:
     slang run <file.slang>       Execute a SLANG flow with an LLM
@@ -173,7 +173,7 @@ async function cmdRun(args: Record<string, string>): Promise<void> {
   const source = readSlangFile(file);
   const adapter = getAdapter(args);
 
-  console.log(`${COLORS.bold}SLANG v0.1.0${COLORS.reset} — running ${file} with ${(adapter as any).name ?? args["adapter"] ?? "echo"}`);
+  console.log(`${COLORS.bold}SLANG v0.3.0${COLORS.reset} — running ${file} with ${(adapter as any).name ?? args["adapter"] ?? "echo"}`);
 
   const state = await runFlow(source, { adapter, onEvent: eventHandler });
   printFlowResult(state);

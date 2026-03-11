@@ -31,6 +31,8 @@ Most agent frameworks require you to write glue code in Python or TypeScript. **
 | Switching LLM providers = rewrite | Pluggable adapters (MCP Sampling, OpenAI, Anthropic, Ollama, any OpenAI-compatible) + router adapter for multi-provider flows |
 | No tooling? No execution. | **Zero-setup mode** — paste a prompt, any LLM becomes an interpreter |
 | Hard to debug agent communication | Built-in dependency graph, deadlock detection, extended static analysis, budget limits |
+| Process crashes lose all progress | **Checkpoint & resume** — persist state after each round, resume from last snapshot |
+| Tool declarations are decorative | **Functional tools** — `tools: [web_search]` + runtime handlers = real tool execution |
 
 ### Three primitives. That's the whole language.
 
@@ -282,6 +284,8 @@ flow "my-flow" {
 ### Key Features
 
 - **Agents** with natural language `role:`, `model:` selection, `tools:` lists, `retry:` count
+- **Functional tools** — `tools: [web_search]` + runtime handlers = real tool execution during `stake`
+- **Checkpoint & resume** — persist `FlowState` after each round, resume after crash
 - **Structured output** — `output: { field: "type" }` contracts on `stake` operations
 - **Retry with backoff** — `retry: N` in agent meta; exponential backoff on LLM failures
 - **Conditionals** — inline `if` on any operation; block `when expr { ... }`
@@ -485,6 +489,48 @@ const result = await runFlow(source, { adapter })
 // Sequential (for debugging / deterministic replay)
 const result = await runFlow(source, { adapter, parallel: false })
 ```
+
+### Checkpoint & Resume
+
+Persist flow state after each round so you can resume after a crash:
+
+```typescript
+import { runFlow, serializeFlowState, deserializeFlowState } from '@riktar/slang'
+import { writeFile, readFile } from 'fs/promises'
+
+// Run with checkpointing
+const state = await runFlow(source, {
+  adapter,
+  checkpoint: async (snapshot) => {
+    await writeFile('checkpoint.json', serializeFlowState(snapshot))
+  },
+})
+
+// Resume from checkpoint
+const saved = deserializeFlowState(await readFile('checkpoint.json', 'utf8'))
+const resumed = await runFlow(source, { adapter, resumeFrom: saved })
+```
+
+### Functional Tools
+
+Make agent `tools:` declarations functional by providing runtime handlers:
+
+```typescript
+const state = await runFlow(source, {
+  adapter,
+  tools: {
+    web_search: async (args) => {
+      const results = await fetch(`https://api.search.com?q=${args.query}`)
+      return await results.text()
+    },
+    code_exec: async (args) => {
+      return runSandbox(args.code as string)
+    },
+  },
+})
+```
+
+The agent's `tools: [web_search]` declaration filters which runtime tools are available to it. During a `stake` operation, the LLM can invoke tools via `TOOL_CALL: web_search({"query": "..."})` in its response. The runtime executes the handler, feeds the result back, and lets the LLM continue.
 
 ### Multi-Endpoint Routing
 

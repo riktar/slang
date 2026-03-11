@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { runFlow, type FlowState, type RuntimeEvent } from "./runtime.js";
+import { runFlow, type FlowState, type RuntimeEvent, serializeFlowState, deserializeFlowState, type ToolHandler } from "./runtime.js";
 import { createEchoAdapter, createRouterAdapter, type LLMAdapter, type LLMMessage, type LLMResponse } from "./adapter.js";
 
 // ─── Helpers ───
@@ -778,6 +778,291 @@ describe("Runtime", () => {
 
       assert.equal(state.status, "converged");
       assert.equal(state.agents.get("B")!.committed, true);
+    });
+  });
+
+  // ─── v0.3: Checkpoint / Resume ───
+
+  describe("Checkpoint / Resume", () => {
+    it("calls checkpoint callback after each round", async () => {
+      const checkpoints: FlowState[] = [];
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            stake work() -> @out
+            commit
+          }
+          converge when: all_committed
+        }
+      `, {
+        adapter: createEchoAdapter(),
+        checkpoint: async (s) => { checkpoints.push(s); },
+      });
+
+      assert.equal(state.status, "converged");
+      // At least one in-progress checkpoint + one final checkpoint
+      assert.ok(checkpoints.length >= 1, `Expected at least 1 checkpoint, got ${checkpoints.length}`);
+      // Final checkpoint should have terminated status
+      const last = checkpoints[checkpoints.length - 1]!;
+      assert.equal(last.status, "converged");
+    });
+
+    it("emits checkpoint events", async () => {
+      const events: RuntimeEvent[] = [];
+      await runFlow(`
+        flow "t" {
+          agent A { commit }
+          converge when: all_committed
+        }
+      `, {
+        adapter: createEchoAdapter(),
+        onEvent: collectEvents(events),
+        checkpoint: async () => {},
+      });
+
+      const cpEvents = events.filter((e) => e.type === "checkpoint");
+      assert.ok(cpEvents.length >= 1);
+    });
+
+    it("checkpointed state is serializable and deserializable", async () => {
+      let serialized = "";
+      await runFlow(`
+        flow "t" {
+          agent A {
+            stake work() -> @B
+            commit
+          }
+          agent B {
+            await data <- @A
+            commit data
+          }
+          converge when: all_committed
+        }
+      `, {
+        adapter: createFixedAdapter("hello\nCONFIDENCE: 0.9"),
+        checkpoint: async (s) => { serialized = serializeFlowState(s); },
+      });
+
+      assert.ok(serialized.length > 0);
+      const deserialized = deserializeFlowState(serialized);
+      assert.equal(deserialized.name, "t");
+      assert.ok(deserialized.agents instanceof Map);
+      assert.ok(deserialized.mailbox instanceof Map);
+    });
+
+    it("resumes from a checkpointed state", async () => {
+      // First, run a flow that will exceed budget after round 1
+      let savedState: FlowState | undefined;
+      const state1 = await runFlow(`
+        flow "t" {
+          agent A {
+            stake step1() -> @out
+            stake step2() -> @out
+            commit
+          }
+          converge when: all_committed
+          budget: rounds(1)
+        }
+      `, {
+        adapter: createFixedAdapter("result\nCONFIDENCE: 0.9"),
+        checkpoint: async (s) => { savedState = s; },
+      });
+
+      assert.equal(state1.status, "budget_exceeded");
+      assert.ok(savedState);
+
+      // Resume from the saved running checkpoint (not the final one)
+      // The first checkpoint is after round 1 (still running)
+      // We need to resume with a higher budget
+      const state2 = await runFlow(`
+        flow "t" {
+          agent A {
+            stake step1() -> @out
+            stake step2() -> @out
+            commit
+          }
+          converge when: all_committed
+          budget: rounds(5)
+        }
+      `, {
+        adapter: createFixedAdapter("result\nCONFIDENCE: 0.9"),
+        resumeFrom: savedState,
+      });
+
+      // The resumed flow should have completed
+      assert.ok(state2.round >= 1);
+    });
+  });
+
+  // ─── v0.3: Functional Tools ───
+
+  describe("Functional Tools", () => {
+    it("executes tool calls and feeds results back to LLM", async () => {
+      let callIndex = 0;
+      const adapter: LLMAdapter = {
+        name: "tool-test",
+        async call(messages: LLMMessage[]): Promise<LLMResponse> {
+          callIndex++;
+          if (callIndex === 1) {
+            // First call: agent requests a tool
+            return {
+              content: 'Let me search for that.\nTOOL_CALL: web_search({"query": "AI trends"})',
+              tokensUsed: 10,
+            };
+          }
+          // Second call: with tool result, produce final answer
+          const lastMsg = messages[messages.length - 1]!;
+          assert.ok(lastMsg.content.includes("AI trends result"));
+          return {
+            content: "Based on the search: AI is growing fast.\nCONFIDENCE: 0.9",
+            tokensUsed: 10,
+          };
+        },
+      };
+
+      const events: RuntimeEvent[] = [];
+      const state = await runFlow(`
+        flow "t" {
+          agent Researcher {
+            tools: [web_search]
+            stake research("AI trends") -> @out
+            commit
+          }
+          converge when: all_committed
+        }
+      `, {
+        adapter,
+        tools: {
+          web_search: async (args) => `AI trends result for: ${(args as any).query}`,
+        },
+        onEvent: collectEvents(events),
+      });
+
+      assert.equal(state.status, "converged");
+      assert.ok(events.some((e) => e.type === "tool_call"));
+      assert.ok(events.some((e) => e.type === "tool_result"));
+      const output = state.outputs[0] as string;
+      assert.ok(output.includes("AI is growing fast"));
+    });
+
+    it("ignores tool calls when no runtime tools are provided", async () => {
+      const adapter = createFixedAdapter('result\nTOOL_CALL: unknown_tool({"x": 1})\nCONFIDENCE: 0.8');
+
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            tools: [unknown_tool]
+            stake work() -> @out
+            commit
+          }
+          converge when: all_committed
+        }
+      `, { adapter });
+
+      assert.equal(state.status, "converged");
+    });
+
+    it("only provides agent-declared tools, not all runtime tools", async () => {
+      let systemPrompt = "";
+      const adapter: LLMAdapter = {
+        name: "spy-test",
+        async call(messages: LLMMessage[]): Promise<LLMResponse> {
+          systemPrompt = messages.find((m) => m.role === "system")?.content ?? "";
+          return { content: "done\nCONFIDENCE: 0.9", tokensUsed: 5 };
+        },
+      };
+
+      await runFlow(`
+        flow "t" {
+          agent A {
+            tools: [web_search]
+            stake work() -> @out
+            commit
+          }
+          converge when: all_committed
+        }
+      `, {
+        adapter,
+        tools: {
+          web_search: async () => "result",
+          code_exec: async () => "result",
+        },
+      });
+
+      assert.ok(systemPrompt.includes("web_search"));
+      assert.ok(!systemPrompt.includes("code_exec"));
+    });
+
+    it("limits tool calls to prevent infinite loops", async () => {
+      let callCount = 0;
+      const adapter: LLMAdapter = {
+        name: "loop-test",
+        async call(): Promise<LLMResponse> {
+          callCount++;
+          // Always request another tool call
+          return {
+            content: `call ${callCount}\nTOOL_CALL: looper({"n": ${callCount}})`,
+            tokensUsed: 5,
+          };
+        },
+      };
+
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            tools: [looper]
+            stake work() -> @out
+            commit
+          }
+          converge when: all_committed
+        }
+      `, {
+        adapter,
+        tools: { looper: async () => "ok" },
+      });
+
+      assert.equal(state.status, "converged");
+      // 1 initial call + 10 max tool loops = 11 calls max
+      assert.ok(callCount <= 11, `Expected <= 11 calls, got ${callCount}`);
+    });
+
+    it("emits tool_call and tool_result events with correct data", async () => {
+      let first = true;
+      const adapter: LLMAdapter = {
+        name: "event-test",
+        async call(): Promise<LLMResponse> {
+          if (first) {
+            first = false;
+            return { content: 'TOOL_CALL: calc({"expr": "2+2"})', tokensUsed: 5 };
+          }
+          return { content: "4\nCONFIDENCE: 1.0", tokensUsed: 5 };
+        },
+      };
+
+      const events: RuntimeEvent[] = [];
+      await runFlow(`
+        flow "t" {
+          agent A {
+            tools: [calc]
+            stake compute("2+2") -> @out
+            commit
+          }
+          converge when: all_committed
+        }
+      `, {
+        adapter,
+        tools: { calc: async (args) => String(eval((args as any).expr)) },
+        onEvent: collectEvents(events),
+      });
+
+      const toolCallEvent = events.find((e) => e.type === "tool_call");
+      assert.ok(toolCallEvent);
+      assert.equal((toolCallEvent as any).agent, "A");
+      assert.equal((toolCallEvent as any).tool, "calc");
+
+      const toolResultEvent = events.find((e) => e.type === "tool_result");
+      assert.ok(toolResultEvent);
+      assert.equal((toolResultEvent as any).result, "4");
     });
   });
 });

@@ -45,12 +45,20 @@ export interface FlowState {
   mailbox: Map<string, unknown>;
 }
 
+export type ToolHandler = (args: Record<string, unknown>) => Promise<string>;
+
 export interface RuntimeOptions {
   adapter: LLMAdapter;
   /** callback for each event */
   onEvent?: (event: RuntimeEvent) => void;
   /** execute independent agents in parallel within a round (default: true) */
   parallel?: boolean;
+  /** checkpoint callback — called after each round with a serializable snapshot of the flow state */
+  checkpoint?: (state: FlowState) => void | Promise<void>;
+  /** resume from a previously checkpointed state instead of starting fresh */
+  resumeFrom?: FlowState;
+  /** tool handler implementations — keys match tool names declared in agent `tools:` metadata */
+  tools?: Record<string, ToolHandler>;
 }
 
 export type RuntimeEvent =
@@ -60,6 +68,9 @@ export type RuntimeEvent =
   | { type: "agent_commit"; agent: string; value: unknown }
   | { type: "agent_escalate"; agent: string; target: string; reason?: string }
   | { type: "agent_retry"; agent: string; attempt: number; error: string }
+  | { type: "tool_call"; agent: string; tool: string; args: Record<string, unknown> }
+  | { type: "tool_result"; agent: string; tool: string; result: string }
+  | { type: "checkpoint"; round: number }
   | { type: "flow_converged"; outputs: unknown[] }
   | { type: "flow_budget_exceeded"; round: number }
   | { type: "flow_deadlock"; agents: string[] }
@@ -77,7 +88,7 @@ export async function runFlow(source: string, options: RuntimeOptions): Promise<
 }
 
 async function executeFlow(flow: FlowDecl, options: RuntimeOptions): Promise<FlowState> {
-  const { adapter, onEvent, parallel = true } = options;
+  const { adapter, onEvent, parallel = true, checkpoint, resumeFrom, tools } = options;
   const depGraph = resolveDeps(flow);
   const deadlocks = detectDeadlocks(depGraph);
 
@@ -93,17 +104,22 @@ async function executeFlow(flow: FlowDecl, options: RuntimeOptions): Promise<Flo
   const maxTokens = extractBudgetValue(budgetNode, "tokens") ?? Infinity;
   const agentDecls = flow.body.filter((n): n is AgentDecl => n.type === "AgentDecl");
 
-  // Initialize state
-  const state = createState(flow, "running");
-  for (const agent of agentDecls) {
-    state.agents.set(agent.name, {
-      name: agent.name,
-      status: depGraph.ready.includes(agent.name) ? "idle" : "blocked",
-      opIndex: 0,
-      output: undefined,
-      bindings: {},
-      committed: false,
-    });
+  // Initialize state (or resume from checkpoint)
+  const state: FlowState = resumeFrom
+    ? { ...cloneFlowState(resumeFrom), status: "running" }
+    : createState(flow, "running");
+
+  if (!resumeFrom) {
+    for (const agent of agentDecls) {
+      state.agents.set(agent.name, {
+        name: agent.name,
+        status: depGraph.ready.includes(agent.name) ? "idle" : "blocked",
+        opIndex: 0,
+        output: undefined,
+        bindings: {},
+        committed: false,
+      });
+    }
   }
 
   // ─── Main Loop ───
@@ -163,7 +179,7 @@ async function executeFlow(flow: FlowDecl, options: RuntimeOptions): Promise<Flo
       const results = await Promise.all(stakeAgents.map(async (agentDecl) => {
         const agentState = state.agents.get(agentDecl.name)!;
         const op = agentDecl.operations[agentState.opIndex]!;
-        return { agentDecl, result: await executeOperation(agentDecl, agentState, op, state, adapter, onEvent) };
+        return { agentDecl, result: await executeOperation(agentDecl, agentState, op, state, adapter, onEvent, tools) };
       }));
       for (const { agentDecl, result } of results) {
         const agentState = state.agents.get(agentDecl.name)!;
@@ -192,7 +208,7 @@ async function executeFlow(flow: FlowDecl, options: RuntimeOptions): Promise<Flo
         const op = agentDecl.operations[agentState.opIndex];
         if (!op) continue;
 
-        const result = await executeOperation(agentDecl, agentState, op, state, adapter, onEvent);
+        const result = await executeOperation(agentDecl, agentState, op, state, adapter, onEvent, tools);
 
         if (result === "commit") {
           agentState.committed = true;
@@ -229,6 +245,18 @@ async function executeFlow(flow: FlowDecl, options: RuntimeOptions): Promise<Flo
         break;
       }
     }
+
+    // Checkpoint after each round
+    if (checkpoint && state.status === "running") {
+      onEvent?.({ type: "checkpoint", round: state.round });
+      await checkpoint(cloneFlowState(state));
+    }
+  }
+
+  // Final checkpoint on termination
+  if (checkpoint) {
+    onEvent?.({ type: "checkpoint", round: state.round });
+    await checkpoint(cloneFlowState(state));
   }
 
   return state;
@@ -243,10 +271,11 @@ async function executeOperation(
   flowState: FlowState,
   adapter: LLMAdapter,
   onEvent?: (event: RuntimeEvent) => void,
+  tools?: Record<string, ToolHandler>,
 ): Promise<"continue" | "commit" | "escalate"> {
   switch (op.type) {
     case "StakeOp":
-      return executeStake(agentDecl, agentState, op, flowState, adapter, onEvent);
+      return executeStake(agentDecl, agentState, op, flowState, adapter, onEvent, tools);
     case "AwaitOp":
       return executeAwait(agentState, op, flowState);
     case "CommitOp":
@@ -254,7 +283,7 @@ async function executeOperation(
     case "EscalateOp":
       return executeEscalateOp(agentState, op, flowState);
     case "WhenBlock":
-      return executeWhen(agentDecl, agentState, op, flowState, adapter, onEvent);
+      return executeWhen(agentDecl, agentState, op, flowState, adapter, onEvent, tools);
   }
 }
 
@@ -265,6 +294,7 @@ async function executeStake(
   flowState: FlowState,
   adapter: LLMAdapter,
   onEvent?: (event: RuntimeEvent) => void,
+  tools?: Record<string, ToolHandler>,
 ): Promise<"continue" | "commit" | "escalate"> {
   // Check condition
   if (op.condition && !evalCondition(op.condition, agentState, flowState)) {
@@ -274,16 +304,46 @@ async function executeStake(
   const taskDescription = serializeFuncCall(op.call, agentState);
   onEvent?.({ type: "agent_start", agent: agentDecl.name, operation: taskDescription });
 
+  // Determine which tools are available for this agent
+  const agentTools = resolveAgentTools(agentDecl, tools);
+
   // Build prompt for LLM
-  const messages = buildAgentPrompt(agentDecl, agentState, taskDescription, flowState, op);
+  const messages = buildAgentPrompt(agentDecl, agentState, taskDescription, flowState, op, agentTools ? Object.keys(agentTools) : undefined);
 
   // Retry with exponential backoff
   const maxAttempts = agentDecl.meta.retry ?? 1;
   let lastError: Error | undefined;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const response = await adapter.call(messages, agentDecl.meta.model);
+      let conversation = [...messages];
+      let response = await adapter.call(conversation, agentDecl.meta.model);
       flowState.tokensUsed += response.tokensUsed;
+
+      // Tool call loop
+      if (agentTools) {
+        const MAX_TOOL_CALLS = 10;
+        let toolCallCount = 0;
+        while (toolCallCount < MAX_TOOL_CALLS) {
+          const toolCall = parseToolCall(response.content);
+          if (!toolCall) break;
+
+          const handler = agentTools[toolCall.name];
+          if (!handler) break;
+
+          onEvent?.({ type: "tool_call", agent: agentDecl.name, tool: toolCall.name, args: toolCall.args });
+
+          const result = await handler(toolCall.args);
+          onEvent?.({ type: "tool_result", agent: agentDecl.name, tool: toolCall.name, result });
+
+          // Append the exchange and re-call LLM
+          conversation.push({ role: "assistant", content: response.content });
+          conversation.push({ role: "user", content: `Tool "${toolCall.name}" returned:\n${result}\n\nContinue with your task.` });
+
+          response = await adapter.call(conversation, agentDecl.meta.model);
+          flowState.tokensUsed += response.tokensUsed;
+          toolCallCount++;
+        }
+      }
 
       agentState.output = response.content;
       agentState.status = "idle";
@@ -388,12 +448,13 @@ async function executeWhen(
   flowState: FlowState,
   adapter: LLMAdapter,
   onEvent?: (event: RuntimeEvent) => void,
+  tools?: Record<string, ToolHandler>,
 ): Promise<"continue" | "commit" | "escalate"> {
   if (!evalCondition(op.condition, agentState, flowState)) {
     return "continue";
   }
   for (const innerOp of op.body) {
-    const result = await executeOperation(agentDecl, agentState, innerOp, flowState, adapter, onEvent);
+    const result = await executeOperation(agentDecl, agentState, innerOp, flowState, adapter, onEvent, tools);
     if (result !== "continue") return result;
   }
   return "continue";
@@ -431,6 +492,7 @@ function buildAgentPrompt(
   taskDescription: string,
   flowState: FlowState,
   stakeOp?: StakeOp,
+  availableTools?: string[],
 ): LLMMessage[] {
   let system = `You are agent "${agentDecl.name}" in a SLANG multi-agent workflow "${flowState.name}".`;
   if (agentDecl.meta.role) {
@@ -447,6 +509,18 @@ function buildAgentPrompt(
     );
     system += `\n\nYou MUST include a JSON block in your response with this exact schema:`;
     system += `\n\`\`\`json\n{\n${schemaLines.join(",\n")}\n}\n\`\`\``;
+  }
+
+  // Tool descriptions
+  if (availableTools && availableTools.length > 0) {
+    system += `\n\nYou have the following tools available:`;
+    for (const tool of availableTools) {
+      system += `\n- ${tool}`;
+    }
+    system += `\n\nTo use a tool, include this exact format in your response:`;
+    system += `\nTOOL_CALL: tool_name({"arg1": "value1"})`;
+    system += `\nYou will receive the result and can continue your task.`;
+    system += `\nOnly use one tool call per response.`;
   }
 
   let user = `Execute your task now.`;
@@ -623,4 +697,55 @@ function extractJSON(text: string): Record<string, unknown> | undefined {
     try { return JSON.parse(text.slice(braceStart, braceEnd + 1)); } catch { /* give up */ }
   }
   return undefined;
+}
+
+// ─── Tool Helpers ───
+
+function resolveAgentTools(
+  agentDecl: AgentDecl,
+  tools?: Record<string, ToolHandler>,
+): Record<string, ToolHandler> | undefined {
+  if (!tools || !agentDecl.meta.tools || agentDecl.meta.tools.length === 0) return undefined;
+  const matched: Record<string, ToolHandler> = {};
+  for (const name of agentDecl.meta.tools) {
+    if (tools[name]) matched[name] = tools[name]!;
+  }
+  return Object.keys(matched).length > 0 ? matched : undefined;
+}
+
+function parseToolCall(content: string): { name: string; args: Record<string, unknown> } | undefined {
+  const match = content.match(/TOOL_CALL:\s*(\w+)\(([\s\S]*?)\)\s*$/m);
+  if (!match) return undefined;
+  const name = match[1]!;
+  const argsStr = match[2]!.trim();
+  try {
+    const args = argsStr ? JSON.parse(argsStr) : {};
+    return { name, args };
+  } catch {
+    return { name, args: {} };
+  }
+}
+
+// ─── Serialization ───
+
+export function serializeFlowState(state: FlowState): string {
+  return JSON.stringify(state, (_key, value) => {
+    if (value instanceof Map) {
+      return { __type: "Map", entries: Array.from(value.entries()) };
+    }
+    return value;
+  });
+}
+
+export function deserializeFlowState(json: string): FlowState {
+  return JSON.parse(json, (_key, value) => {
+    if (value && typeof value === "object" && value.__type === "Map") {
+      return new Map(value.entries);
+    }
+    return value;
+  });
+}
+
+function cloneFlowState(state: FlowState): FlowState {
+  return deserializeFlowState(serializeFlowState(state));
 }

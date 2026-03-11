@@ -7,11 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0]
+
 ### Added
 
-- MCP Sampling adapter (`createSamplingAdapter`) — delegates LLM calls to the MCP host (Claude Code, Claude Desktop, etc.) via the `sampling/createMessage` protocol. No API key required; uses the subscription already active in the host.
-- `sampling` is now the default adapter for the MCP server (`SLANG_ADAPTER` defaults to `sampling` instead of `echo`).
-- `"sampling"` added to the `run_flow` tool schema enum.
+- **Checkpoint & Resume** — persist `FlowState` after each round for crash recovery
+  - `checkpoint` callback in `RuntimeOptions` — called with a deep-cloned snapshot after each round and on termination
+  - `resumeFrom` in `RuntimeOptions` — resume a flow from a previously saved state
+  - `serializeFlowState()` / `deserializeFlowState()` helpers for JSON-safe `Map` serialization
+  - New `checkpoint` runtime event
+- **Functional Tools** — agent `tools:` declarations become executable
+  - `tools` record in `RuntimeOptions` — user-provided tool handler functions
+  - Tool call loop in `executeStake`: LLM requests a tool via `TOOL_CALL: name(args)`, runtime executes the handler, feeds result back, LLM continues
+  - Only tools declared in agent meta **and** provided in runtime options are available (intersection)
+  - Safety limit of 10 tool calls per stake operation
+  - New `tool_call` and `tool_result` runtime events
+- `ToolHandler` type exported from public API
+- MCP server logs tool_call, tool_result, and checkpoint events
+- CLI version updated to 0.3.0
+- Zero-setup prompt rule 13 for tools
+
+## [0.2.0]
+
+### Added
+
+- **Retry & Error Handling** — `retry: N` in agent metadata with exponential backoff
+- **Structured Output Contracts** — `output: { field: "type" }` on stake operations
+- **Extended Static Analysis** — `analyzeFlow()` checks for missing converge, budget, unknown recipients/sources, uncommitted agents
+- `agent_retry` runtime event
+- `FlowDiagnostic` type with `level` + `message`
+- `check_flow` MCP tool now returns extended diagnostics
 
 ## [0.1.0] - 2025-01-01
 
