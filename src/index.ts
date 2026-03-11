@@ -7,6 +7,6 @@ export { resolveDeps, detectDeadlocks } from "./resolver.js";
 export type { AgentDep, DepGraph } from "./resolver.js";
 export { runFlow } from "./runtime.js";
 export type { AgentState, FlowState, RuntimeOptions, RuntimeEvent } from "./runtime.js";
-export { createOpenAIAdapter, createAnthropicAdapter, createEchoAdapter } from "./adapter.js";
-export type { LLMAdapter, LLMMessage, LLMResponse } from "./adapter.js";
+export { createOpenAIAdapter, createAnthropicAdapter, createEchoAdapter, createRouterAdapter } from "./adapter.js";
+export type { LLMAdapter, LLMMessage, LLMResponse, RouterRule, RouterAdapterConfig } from "./adapter.js";
 export type * from "./ast.js";

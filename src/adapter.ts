@@ -165,3 +165,54 @@ export function createEchoAdapter(): LLMAdapter {
     },
   };
 }
+
+// ─── Router Adapter ───
+// Routes LLM calls to different adapters based on model name patterns.
+// Enables multi-endpoint / multi-provider flows where each agent can
+// use a different LLM backend.
+
+export interface RouterRule {
+  /** Glob-like pattern matched against the model string (e.g. "claude-*", "gpt-*", "local/*") */
+  pattern: string;
+  /** Adapter to use when the pattern matches */
+  adapter: LLMAdapter;
+}
+
+export interface RouterAdapterConfig {
+  /** Ordered list of pattern→adapter rules. First match wins. */
+  routes: RouterRule[];
+  /** Fallback adapter when no pattern matches */
+  fallback: LLMAdapter;
+}
+
+export function createRouterAdapter(config: RouterAdapterConfig): LLMAdapter {
+  const compiled = config.routes.map(({ pattern, adapter }) => ({
+    regex: patternToRegex(pattern),
+    adapter,
+  }));
+
+  return {
+    name: "router",
+    async call(messages: LLMMessage[], model?: string): Promise<LLMResponse> {
+      const adapter = resolveAdapter(compiled, config.fallback, model);
+      return adapter.call(messages, model);
+    },
+  };
+}
+
+function resolveAdapter(
+  routes: { regex: RegExp; adapter: LLMAdapter }[],
+  fallback: LLMAdapter,
+  model?: string,
+): LLMAdapter {
+  if (!model) return fallback;
+  for (const { regex, adapter } of routes) {
+    if (regex.test(model)) return adapter;
+  }
+  return fallback;
+}
+
+function patternToRegex(pattern: string): RegExp {
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+  return new RegExp(`^${escaped}$`, "i");
+}

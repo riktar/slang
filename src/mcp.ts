@@ -203,10 +203,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 logText += `  [${ev.agent}] escalated to ${ev.target}\n`;
                 break;
               case "flow_converged":
-                logText += `\nFlow converged after ${ev.rounds} round(s), ~${ev.tokensUsed} tokens.\n`;
+                logText += `\nFlow converged.\n`;
                 break;
               case "flow_budget_exceeded":
-                logText += `\nBudget exceeded after ${ev.rounds} round(s).\n`;
+                logText += `\nBudget exceeded after round ${ev.round}.\n`;
                 break;
               case "flow_deadlock":
                 logText += `\nDeadlock detected.\n`;
@@ -270,14 +270,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
       try {
         const ast = parse(source);
-        const graph = resolveDeps(ast);
+        const flow = ast.flows[0];
+        if (!flow) {
+          return { content: [{ type: "text", text: "Error: No flow found in source." }], isError: true };
+        }
+        const graph = resolveDeps(flow);
         const deadlocks = detectDeadlocks(graph);
         const report = {
-          agents: graph.agents,
-          dependencies: Object.fromEntries(
-            [...graph.deps.entries()].map(([k, v]) => [k, [...v]]),
+          agents: Object.fromEntries(
+            [...graph.agents.entries()].map(([k, v]) => [k, v]),
           ),
           initiallyReady: graph.ready,
+          blocked: graph.blocked,
           deadlocks,
           ok: deadlocks.length === 0,
         };

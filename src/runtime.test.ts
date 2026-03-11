@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { runFlow, type FlowState, type RuntimeEvent } from "./runtime.js";
-import { createEchoAdapter, type LLMAdapter, type LLMMessage, type LLMResponse } from "./adapter.js";
+import { createEchoAdapter, createRouterAdapter, type LLMAdapter, type LLMMessage, type LLMResponse } from "./adapter.js";
 
 // ─── Helpers ───
 
@@ -420,6 +420,238 @@ describe("Runtime", () => {
       // Just check it runs without error; the key test is the runtime handles
       // the dot access pattern correctly
       assert.ok(state.round >= 1);
+    });
+  });
+
+  // ─── Parallel Execution ───
+
+  describe("Parallel execution", () => {
+    it("executes independent stake agents concurrently", async () => {
+      const callOrder: string[] = [];
+      const adapter: LLMAdapter = {
+        name: "tracking/test",
+        async call(messages: LLMMessage[]): Promise<LLMResponse> {
+          const system = messages.find(m => m.role === "system")?.content ?? "";
+          const agentMatch = system.match(/agent "(\w+)"/);
+          const name = agentMatch ? agentMatch[1] : "unknown";
+          callOrder.push(`start:${name}`);
+          // Small delay so both calls are in-flight
+          await new Promise(r => setTimeout(r, 10));
+          callOrder.push(`end:${name}`);
+          return { content: `result from ${name}`, tokensUsed: 5 };
+        },
+      };
+
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            stake work() -> @out
+            commit
+          }
+          agent B {
+            stake work() -> @out
+            commit
+          }
+          converge when: all_committed
+        }
+      `, { adapter, parallel: true });
+
+      assert.equal(state.status, "converged");
+      assert.equal(state.outputs.length, 2);
+      // Both starts should happen before both ends (parallel dispatch)
+      const startA = callOrder.indexOf("start:A");
+      const startB = callOrder.indexOf("start:B");
+      const endA = callOrder.indexOf("end:A");
+      const endB = callOrder.indexOf("end:B");
+      assert.ok(startA < endA);
+      assert.ok(startB < endB);
+      // Both starts should happen before any end
+      assert.ok(startA < endB || startB < endA);
+    });
+
+    it("falls back to sequential when parallel is false", async () => {
+      const callOrder: string[] = [];
+      const adapter: LLMAdapter = {
+        name: "tracking/test",
+        async call(messages: LLMMessage[]): Promise<LLMResponse> {
+          const system = messages.find(m => m.role === "system")?.content ?? "";
+          const agentMatch = system.match(/agent "(\w+)"/);
+          const name = agentMatch ? agentMatch[1] : "unknown";
+          callOrder.push(`start:${name}`);
+          await new Promise(r => setTimeout(r, 10));
+          callOrder.push(`end:${name}`);
+          return { content: `result from ${name}`, tokensUsed: 5 };
+        },
+      };
+
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            stake work() -> @out
+            commit
+          }
+          agent B {
+            stake work() -> @out
+            commit
+          }
+          converge when: all_committed
+        }
+      `, { adapter, parallel: false });
+
+      assert.equal(state.status, "converged");
+      // Sequential: A should fully complete before B starts
+      // (both go through the sequential path since parallel=false)
+      const startA = callOrder.indexOf("start:A");
+      const endA = callOrder.indexOf("end:A");
+      const startB = callOrder.indexOf("start:B");
+      assert.ok(endA < startB, "Expected A to finish before B starts in sequential mode");
+    });
+
+    it("still works correctly when mixing stake and await agents", async () => {
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            stake produce() -> @C
+            commit
+          }
+          agent B {
+            stake produce() -> @C
+            commit
+          }
+          agent C {
+            await data <- @A, @B
+            commit data
+          }
+          converge when: all_committed
+        }
+      `, { adapter: createFixedAdapter("content\nCONFIDENCE: 0.9") });
+
+      assert.equal(state.status, "converged");
+      assert.ok(state.agents.get("A")!.committed);
+      assert.ok(state.agents.get("B")!.committed);
+      assert.ok(state.agents.get("C")!.committed);
+    });
+  });
+
+  // ─── Router Adapter ───
+
+  describe("Router adapter", () => {
+    it("routes to different adapters based on model pattern", async () => {
+      const calls: { adapter: string; model?: string }[] = [];
+
+      const adapterA: LLMAdapter = {
+        name: "adapter-a",
+        async call(_msgs, model): Promise<LLMResponse> {
+          calls.push({ adapter: "a", model });
+          return { content: "from A\nCONFIDENCE: 0.9", tokensUsed: 5 };
+        },
+      };
+
+      const adapterB: LLMAdapter = {
+        name: "adapter-b",
+        async call(_msgs, model): Promise<LLMResponse> {
+          calls.push({ adapter: "b", model });
+          return { content: "from B\nCONFIDENCE: 0.9", tokensUsed: 5 };
+        },
+      };
+
+      const router = createRouterAdapter({
+        routes: [
+          { pattern: "claude-*", adapter: adapterA },
+          { pattern: "gpt-*", adapter: adapterB },
+        ],
+        fallback: adapterB,
+      });
+
+      const state = await runFlow(`
+        flow "t" {
+          agent Writer {
+            model: "claude-sonnet"
+            stake write() -> @out
+            commit
+          }
+          agent Reviewer {
+            model: "gpt-4o"
+            stake review() -> @out
+            commit
+          }
+          converge when: all_committed
+        }
+      `, { adapter: router });
+
+      assert.equal(state.status, "converged");
+      assert.equal(calls.length, 2);
+      const claudeCall = calls.find(c => c.model === "claude-sonnet");
+      const gptCall = calls.find(c => c.model === "gpt-4o");
+      assert.ok(claudeCall);
+      assert.ok(gptCall);
+      assert.equal(claudeCall!.adapter, "a");
+      assert.equal(gptCall!.adapter, "b");
+    });
+
+    it("uses fallback when no pattern matches", async () => {
+      const calls: string[] = [];
+
+      const fallback: LLMAdapter = {
+        name: "fallback",
+        async call(): Promise<LLMResponse> {
+          calls.push("fallback");
+          return { content: "fallback result", tokensUsed: 5 };
+        },
+      };
+
+      const router = createRouterAdapter({
+        routes: [
+          { pattern: "claude-*", adapter: { name: "never", async call() { return { content: "", tokensUsed: 0 }; } } },
+        ],
+        fallback,
+      });
+
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            model: "unknown-model"
+            stake work() -> @out
+            commit
+          }
+          converge when: all_committed
+        }
+      `, { adapter: router });
+
+      assert.equal(state.status, "converged");
+      assert.ok(calls.includes("fallback"));
+    });
+
+    it("uses fallback when agent has no model", async () => {
+      const calls: string[] = [];
+
+      const fallback: LLMAdapter = {
+        name: "fallback",
+        async call(): Promise<LLMResponse> {
+          calls.push("fallback");
+          return { content: "result", tokensUsed: 5 };
+        },
+      };
+
+      const router = createRouterAdapter({
+        routes: [
+          { pattern: "gpt-*", adapter: { name: "gpt", async call() { return { content: "", tokensUsed: 0 }; } } },
+        ],
+        fallback,
+      });
+
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            stake work() -> @out
+            commit
+          }
+          converge when: all_committed
+        }
+      `, { adapter: router });
+
+      assert.equal(state.status, "converged");
+      assert.ok(calls.includes("fallback"));
     });
   });
 });

@@ -49,6 +49,8 @@ export interface RuntimeOptions {
   adapter: LLMAdapter;
   /** callback for each event */
   onEvent?: (event: RuntimeEvent) => void;
+  /** execute independent agents in parallel within a round (default: true) */
+  parallel?: boolean;
 }
 
 export type RuntimeEvent =
@@ -74,7 +76,7 @@ export async function runFlow(source: string, options: RuntimeOptions): Promise<
 }
 
 async function executeFlow(flow: FlowDecl, options: RuntimeOptions): Promise<FlowState> {
-  const { adapter, onEvent } = options;
+  const { adapter, onEvent, parallel = true } = options;
   const depGraph = resolveDeps(flow);
   const deadlocks = detectDeadlocks(depGraph);
 
@@ -141,36 +143,80 @@ async function executeFlow(flow: FlowDecl, options: RuntimeOptions): Promise<Flo
     }
 
     // Execute each ready agent's next operation
+    // Partition into parallelizable (stake) and sequential (await/commit/escalate/when) ops
+    const stakeAgents: AgentDecl[] = [];
+    const seqAgents: AgentDecl[] = [];
     for (const agentDecl of executable) {
       const agentState = state.agents.get(agentDecl.name)!;
       const op = agentDecl.operations[agentState.opIndex];
       if (!op) continue;
+      if (parallel && op.type === "StakeOp") {
+        stakeAgents.push(agentDecl);
+      } else {
+        seqAgents.push(agentDecl);
+      }
+    }
 
-      const result = await executeOperation(agentDecl, agentState, op, state, adapter, onEvent);
+    // Run parallelizable stake operations concurrently
+    if (stakeAgents.length > 0) {
+      const results = await Promise.all(stakeAgents.map(async (agentDecl) => {
+        const agentState = state.agents.get(agentDecl.name)!;
+        const op = agentDecl.operations[agentState.opIndex]!;
+        return { agentDecl, result: await executeOperation(agentDecl, agentState, op, state, adapter, onEvent) };
+      }));
+      for (const { agentDecl, result } of results) {
+        const agentState = state.agents.get(agentDecl.name)!;
+        if (result === "commit") {
+          agentState.committed = true;
+          agentState.status = "committed";
+          onEvent?.({ type: "agent_commit", agent: agentDecl.name, value: agentState.output });
+        } else if (result === "escalate") {
+          agentState.status = "escalated";
+          onEvent?.({ type: "agent_escalate", agent: agentDecl.name, target: agentState.escalatedTo!, reason: agentState.escalateReason });
+          if (agentState.escalatedTo === "Human") {
+            state.status = "escalated";
+            onEvent?.({ type: "flow_escalated", target: "Human", reason: agentState.escalateReason });
+            break;
+          }
+        } else {
+          agentState.opIndex++;
+        }
+      }
+    }
 
-      if (result === "commit") {
-        agentState.committed = true;
-        agentState.status = "committed";
-        onEvent?.({ type: "agent_commit", agent: agentDecl.name, value: agentState.output });
-      } else if (result === "escalate") {
-        agentState.status = "escalated";
-        onEvent?.({
-          type: "agent_escalate",
-          agent: agentDecl.name,
-          target: agentState.escalatedTo!,
-          reason: agentState.escalateReason,
-        });
-        if (agentState.escalatedTo === "Human") {
-          state.status = "escalated";
+    // Run sequential operations one at a time
+    if (state.status === "running") {
+      for (const agentDecl of seqAgents) {
+        const agentState = state.agents.get(agentDecl.name)!;
+        const op = agentDecl.operations[agentState.opIndex];
+        if (!op) continue;
+
+        const result = await executeOperation(agentDecl, agentState, op, state, adapter, onEvent);
+
+        if (result === "commit") {
+          agentState.committed = true;
+          agentState.status = "committed";
+          onEvent?.({ type: "agent_commit", agent: agentDecl.name, value: agentState.output });
+        } else if (result === "escalate") {
+          agentState.status = "escalated";
           onEvent?.({
-            type: "flow_escalated",
-            target: "Human",
+            type: "agent_escalate",
+            agent: agentDecl.name,
+            target: agentState.escalatedTo!,
             reason: agentState.escalateReason,
           });
-          break;
+          if (agentState.escalatedTo === "Human") {
+            state.status = "escalated";
+            onEvent?.({
+              type: "flow_escalated",
+              target: "Human",
+              reason: agentState.escalateReason,
+            });
+            break;
+          }
+        } else {
+          agentState.opIndex++;
         }
-      } else {
-        agentState.opIndex++;
       }
     }
 

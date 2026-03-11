@@ -28,7 +28,7 @@ Most agent frameworks require you to write glue code in Python or TypeScript. **
 |---------|---------------|
 | Agent workflows buried in code | Declarative `.slang` files — readable like pseudocode |
 | LLMs can't understand framework boilerplate | Three primitives: `stake`, `await`, `commit` |
-| Switching LLM providers = rewrite | Pluggable adapters (MCP Sampling, OpenAI, Anthropic, Ollama, any OpenAI-compatible) |
+| Switching LLM providers = rewrite | Pluggable adapters (MCP Sampling, OpenAI, Anthropic, Ollama, any OpenAI-compatible) + router adapter for multi-provider flows |
 | No tooling? No execution. | **Zero-setup mode** — paste a prompt, any LLM becomes an interpreter |
 | Hard to debug agent communication | Built-in dependency graph, deadlock detection, budget limits |
 
@@ -288,6 +288,8 @@ flow "my-flow" {
 - **Special recipients** — `@out` (flow output), `@all` (broadcast), `@Human` (human-in-the-loop)
 - **State access** — `@Agent.output`, `@Agent.status`, `round`, `tokens_used`
 - **Deadlock detection** — static analysis catches circular dependencies before execution
+- **Parallel execution** — independent agents dispatch LLM calls concurrently within each round
+- **Multi-endpoint routing** — route agents to different LLM providers via `model:` + router adapter
 
 ## Examples
 
@@ -426,6 +428,7 @@ import {
   createAnthropicAdapter,
   createSamplingAdapter,
   createEchoAdapter,
+  createRouterAdapter,
 } from '@riktar/slang'
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js'
 
@@ -448,7 +451,55 @@ const anthropic = createAnthropicAdapter({
 
 // Echo (testing — returns the prompt as output)
 const echo = createEchoAdapter()
+
+// Router — route to different backends based on model name
+const router = createRouterAdapter({
+  routes: [
+    { pattern: 'claude-*',  adapter: anthropic },
+    { pattern: 'gpt-*',     adapter: openai },
+    { pattern: 'local/*',   adapter: createOpenAIAdapter({
+        apiKey: 'unused',
+        baseUrl: 'http://localhost:11434/v1',
+      })
+    },
+  ],
+  fallback: openai,
+})
 ```
+
+### Parallel Execution
+
+By default, the runtime executes independent agents in parallel within each round. All agents whose current operation is a `stake` call are dispatched concurrently, while state-dependent operations (`await`, `commit`, `escalate`) run sequentially.
+
+```typescript
+// Parallel (default)
+const result = await runFlow(source, { adapter })
+
+// Sequential (for debugging / deterministic replay)
+const result = await runFlow(source, { adapter, parallel: false })
+```
+
+### Multi-Endpoint Routing
+
+Use the router adapter to send different agents to different LLM providers:
+
+```
+flow "hybrid" {
+  agent Researcher {
+    model: "gpt-4o"              -- routed to OpenAI
+    stake gather(topic) -> @Analyst
+  }
+  agent Analyst {
+    model: "claude-sonnet"       -- routed to Anthropic
+    await data <- @Researcher
+    stake analyze(data) -> @out
+    commit
+  }
+  converge when: all_committed
+}
+```
+
+The `model` field on each agent is matched against the router's pattern rules. First match wins. See [SPEC.md](SPEC.md#53-multi-endpoint-routing) for details.
 
 ## MCP Server
 
@@ -512,10 +563,10 @@ Source (.slang) → Lexer → Parser → AST → Resolver → DepGraph → Runti
 | **Lexer** | Hand-written tokenizer with line/column tracking |
 | **Parser** | Recursive-descent parser producing a fully typed AST |
 | **Resolver** | Builds dependency graphs, detects deadlocks via DFS |
-| **Runtime** | Async round-based scheduler with mailbox communication |
-| **Adapters** | Pluggable LLM backends (MCP Sampling, OpenAI, Anthropic, Echo) |
+| **Runtime** | Async round-based scheduler with mailbox communication and parallel dispatch |
+| **Adapters** | Pluggable LLM backends (MCP Sampling, OpenAI, Anthropic, Router, Echo) |
 
-The runtime uses a **mailbox pattern** — agents communicate via `"Source->Target"` keyed messages. Each round, all executable (non-blocked) agents run in parallel, and convergence/budget conditions are checked.
+The runtime uses a **mailbox pattern** — agents communicate via `"Source->Target"` keyed messages. Each round, all executable (non-blocked) agents with `stake` operations run **in parallel**, and convergence/budget conditions are checked.
 
 ## Project Structure
 

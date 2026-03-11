@@ -292,13 +292,57 @@ The runtime (LLM or thin scheduler) resolves execution order as follows:
 4. Agents whose first operation is `await` are **blocked**
 5. Execute ready agents, collect outputs, satisfy awaits, repeat
 
-### 5.2 Execution Modes
+### 5.2 Parallel Execution
+
+Within each round, **independent agents execute in parallel**. The runtime partitions executable agents into two groups:
+
+1. **Parallelizable** — agents whose current operation is `stake`. These are dispatched concurrently via `Promise.all`, because they produce output via LLM calls and have no ordering dependency on each other.
+2. **Sequential** — agents whose current operation is `await`, `commit`, `escalate`, or `when`. These modify shared state (mailbox, agent status) and are executed one at a time.
+
+This means that if three agents all need to call an LLM at the same time, the three API calls happen concurrently, significantly reducing wall-clock time.
+
+Parallel execution can be disabled by passing `parallel: false` in `RuntimeOptions` (useful for debugging or deterministic replay).
+
+### 5.3 Multi-Endpoint Routing
+
+The `model` field on an agent declaration is not just a hint — when using a **router adapter**, it determines which LLM backend handles that agent's calls. This enables flows where different agents run on different providers, endpoints, or even local models:
+
+```slang
+flow "hybrid-analysis" {
+  agent Researcher {
+    model: "gpt-4o"              -- routed to OpenAI
+    stake gather(topic) -> @Analyst
+  }
+  agent Analyst {
+    model: "claude-sonnet"        -- routed to Anthropic
+    await data <- @Researcher
+    stake analyze(data) -> @out
+    commit
+  }
+  converge when: all_committed
+}
+```
+
+The router adapter matches the `model` string against a list of pattern→adapter rules (first match wins). This is configured at the runtime level, not in the `.slang` file itself:
+
+```typescript
+const router = createRouterAdapter({
+  routes: [
+    { pattern: "claude-*", adapter: anthropicAdapter },
+    { pattern: "gpt-*",    adapter: openaiAdapter },
+    { pattern: "local/*",  adapter: ollamaAdapter },
+  ],
+  fallback: openaiAdapter,
+});
+```
+
+### 5.4 Execution Modes
 
 **Zero-Setup Mode**: An LLM reads the flow and executes it turn-by-turn in a single conversation, simulating each agent in sequence. The LLM maintains state as structured text.
 
 **Thin Runtime Mode**: A scheduler program parses the flow, maintains state, and dispatches each agent as a separate LLM call. Supports real tools, parallel execution, and different models per agent.
 
-### 5.3 Termination
+### 5.5 Termination
 
 A flow terminates when:
 1. The `converge` condition is met (success)
@@ -306,9 +350,9 @@ A flow terminates when:
 3. An `escalate @Human` is reached (human-in-the-loop)
 4. A deadlock is detected — no agent can proceed (error)
 
-### 5.4 Round Model
+### 5.6 Round Model
 
-A **round** is one full pass through all currently executable agents. The `budget: rounds(N)` constraint limits how many full passes occur. Within a round, agents may execute in any order consistent with their dependencies.
+A **round** is one full pass through all currently executable agents. The `budget: rounds(N)` constraint limits how many full passes occur. Within a round, independent agents run in parallel (see §5.2).
 
 ---
 
