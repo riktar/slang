@@ -4,6 +4,7 @@
 
 flow "article" {
   agent Writer {
+    model: "inception/mercury-2"
     role: "Technical writer specializing in clear, concise articles"
     retry: 2
 

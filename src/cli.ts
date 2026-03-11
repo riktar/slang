@@ -3,9 +3,10 @@
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { parse } from "./parser.js";
 import { resolveDeps, detectDeadlocks } from "./resolver.js";
-import { runFlow, type RuntimeEvent, type FlowState } from "./runtime.js";
+import { runFlow, type RuntimeEvent, type FlowState, type ToolHandler } from "./runtime.js";
 import {
   createOpenAIAdapter,
   createAnthropicAdapter,
@@ -18,7 +19,7 @@ import {
 
 function printUsage(): void {
   console.log(`
-  slang — SLANG interpreter v0.3.1
+  slang — SLANG interpreter v0.3.2
 
   USAGE:
     slang run <file.slang>       Execute a SLANG flow with an LLM
@@ -30,11 +31,12 @@ function printUsage(): void {
     --adapter <openai|anthropic|openrouter|echo>   LLM adapter (default: echo)
     --model <model-name>                Model override
     --api-key <key>                     API key (or set OPENAI_API_KEY / ANTHROPIC_API_KEY / OPENROUTER_API_KEY)
+    --tools <file.js|file.ts>           JS/TS file exporting tool handlers (default export)
 
   EXAMPLES:
     slang parse examples/research.slang
     slang run examples/research.slang --adapter openai --model gpt-4o
-    slang run examples/research.slang --adapter anthropic
+    slang run examples/research.slang --adapter openrouter --tools tools.js
     slang prompt > system_prompt.txt
   `);
 }
@@ -152,6 +154,12 @@ function eventHandler(event: RuntimeEvent): void {
       console.log(`\n${COLORS.bold}${COLORS.yellow}═══ ESCALATED TO @${event.target} ═══${COLORS.reset}`);
       if (event.reason) console.log(`Reason: ${event.reason}`);
       break;
+    case "tool_call":
+      console.log(`${COLORS.magenta}🔧 ${event.agent} → ${event.tool}(${JSON.stringify(event.args)})${COLORS.reset}`);
+      break;
+    case "tool_result":
+      console.log(`${COLORS.dim}   ← ${event.result.slice(0, 200)}${COLORS.reset}`);
+      break;
   }
 }
 
@@ -172,6 +180,26 @@ function printFlowResult(state: FlowState): void {
   }
 }
 
+// ─── Tool Loading ───
+
+async function loadTools(toolsPath: string): Promise<Record<string, ToolHandler>> {
+  const absolute = resolve(toolsPath);
+  const fileUrl = pathToFileURL(absolute).href;
+  try {
+    const mod = await import(fileUrl);
+    const tools = mod.default ?? mod;
+    if (typeof tools !== "object" || tools === null) {
+      console.error(`Error: tools file must export an object { name: handler }`);
+      process.exit(1);
+    }
+    return tools as Record<string, ToolHandler>;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`Error: cannot load tools file '${toolsPath}': ${msg}`);
+    process.exit(1);
+  }
+}
+
 // ─── Commands ───
 
 async function cmdRun(args: Record<string, string>): Promise<void> {
@@ -183,10 +211,14 @@ async function cmdRun(args: Record<string, string>): Promise<void> {
 
   const source = readSlangFile(file);
   const adapter = getAdapter(args);
+  const tools = args["tools"] ? await loadTools(args["tools"]) : undefined;
 
-  console.log(`${COLORS.bold}SLANG v0.3.1${COLORS.reset} — running ${file} with ${(adapter as any).name ?? args["adapter"] ?? "echo"}`);
+  console.log(`${COLORS.bold}SLANG v0.3.2${COLORS.reset} — running ${file} with ${(adapter as any).name ?? args["adapter"] ?? "echo"}`);
+  if (tools) {
+    console.log(`${COLORS.dim}Tools loaded: ${Object.keys(tools).join(", ")}${COLORS.reset}`);
+  }
 
-  const state = await runFlow(source, { adapter, onEvent: eventHandler });
+  const state = await runFlow(source, { adapter, tools, onEvent: eventHandler });
   printFlowResult(state);
 }
 

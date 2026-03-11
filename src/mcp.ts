@@ -51,7 +51,7 @@ function getAdapter() {
 // ─── MCP Server ───
 
 const server = new Server(
-  { name: "slang", version: "0.3.1" },
+  { name: "slang", version: "0.3.2" },
   { capabilities: { tools: {} } },
 );
 

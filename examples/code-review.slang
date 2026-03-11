@@ -1,5 +1,6 @@
 -- Code review with tools and structured output
 -- Features: tools (code_exec), output on multiple stakes, when blocks, review loop
+-- Run with: slang run code-review.slang --adapter openrouter --tools examples/tools.js
 
 flow "code-review" {
   agent Developer {

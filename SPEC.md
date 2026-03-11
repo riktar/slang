@@ -1,6 +1,6 @@
 # SLANG — Super Language for Agent Negotiation & Governance
 
-## Specification v0.3.1
+## Specification v0.3.2
 
 ---
 
@@ -443,7 +443,9 @@ When an agent declares `tools: [web_search, code_exec]`, the runtime can make th
 
 #### Providing Tool Handlers
 
-Pass a `tools` record in `RuntimeOptions`:
+Tool handlers can be provided via the **API** or via the **CLI**.
+
+**API** — pass a `tools` record in `RuntimeOptions`:
 
 ```typescript
 const state = await runFlow(source, {
@@ -460,7 +462,13 @@ const state = await runFlow(source, {
 });
 ```
 
-Each handler receives a `Record<string, unknown>` of arguments and must return a `string` result.
+**CLI** — pass a JS/TS file with `--tools`:
+
+```bash
+slang run research.slang --adapter openrouter --tools tools.js
+```
+
+The file must default-export (or module-export) an object where each key is a tool name and each value is an async function `(args: Record<string, unknown>) => Promise<string>`. See `examples/tools.js` for a ready-to-use template.
 
 #### How It Works
 

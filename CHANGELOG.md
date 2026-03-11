@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2]
+
+### Added
+
+- **CLI: `--tools` flag** — load tool handlers from an external JS/TS file
+  - `slang run flow.slang --adapter openrouter --tools tools.js`
+  - The file must default-export an object `{ name: asyncHandler }` — each handler is `(args) => Promise<string>`
+  - Dynamic import via `pathToFileURL` for cross-platform compatibility
+  - Loaded tools are logged at startup and passed to the runtime
+- Example tool handlers file: `examples/tools.js` (stubs for `web_search` and `code_exec`)
+- CLI displays `tool_call` and `tool_result` events during execution
+
 ## [0.3.1]
 
 ### Added

@@ -1,7 +1,7 @@
 # SLANG Language Playbook
 
 > Complete syntax reference, formal grammar, and annotated examples for  
-> **SLANG v0.3.1** — Super Language for Agent Negotiation & Governance.
+> **SLANG v0.3.2** — Super Language for Agent Negotiation & Governance.
 
 ---
 
@@ -545,7 +545,11 @@ The `serializeFlowState` / `deserializeFlowState` helpers handle `Map` serializa
 
 ### Functional Tools
 
-When an agent declares `tools: [web_search]` **and** the runtime provides matching tool handlers, the tools become functional:
+When an agent declares `tools: [web_search]` **and** the runtime provides matching tool handlers, the tools become functional.
+
+Tool handlers can be provided in two ways:
+
+**API** — pass a `tools` record to `runFlow()`:
 
 ```typescript
 const state = await runFlow(source, {
@@ -557,6 +561,14 @@ const state = await runFlow(source, {
   },
 });
 ```
+
+**CLI** — pass a JS/TS file with `--tools`:
+
+```bash
+slang run research.slang --adapter openrouter --tools tools.js
+```
+
+The file must default-export an object `{ name: handler }`. See `examples/tools.js` for a template.
 
 During a `stake` operation, the LLM can invoke tools by including `TOOL_CALL: tool_name({"arg": "value"})` in its response. The runtime:
 

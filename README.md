@@ -353,6 +353,7 @@ slang prompt                 # Print the zero-setup system prompt
 | `--api-key` | LLM API key (not required with `sampling`) |
 | `--model` | Model name (e.g. `gpt-4o`, `claude-sonnet-4-20250514`, `openai/gpt-4o`) |
 | `--base-url` | Custom endpoint (Ollama, local models — OpenAI adapter only) |
+| `--tools` | JS/TS file exporting tool handlers (see [Functional Tools](#functional-tools)) |
 
 ### Environment Variables
 
@@ -426,7 +427,35 @@ const router = createRouterAdapter({
 
 ### Functional Tools
 
-Make agent `tools:` declarations real:
+Make agent `tools:` declarations real — from the **CLI** or via **API**.
+
+#### CLI: `--tools` flag
+
+Create a JS/TS file that default-exports an object of tool handlers:
+
+```javascript
+// tools.js
+export default {
+  async web_search(args) {
+    const res = await fetch(`https://api.search.com?q=${encodeURIComponent(args.query)}`);
+    return await res.text();
+  },
+  async code_exec(args) {
+    // run in a sandbox...
+    return JSON.stringify({ status: "success", output: "..." });
+  },
+};
+```
+
+Then pass it to `slang run`:
+
+```bash
+slang run research.slang --adapter openrouter --tools tools.js
+```
+
+The CLI loads the file, logs the available tools, and passes them to the runtime. A ready-to-use example is in [`examples/tools.js`](examples/tools.js).
+
+#### API: `tools` option
 
 ```typescript
 const state = await runFlow(source, {
@@ -442,7 +471,7 @@ const state = await runFlow(source, {
 })
 ```
 
-Only tools listed in the agent's `tools: [...]` declaration **and** provided in runtime options are available. The LLM invokes them via `TOOL_CALL: name(args)` in its response; the runtime executes the handler, feeds the result back, and the LLM continues.
+Only tools listed in the agent's `tools: [...]` declaration **and** provided in runtime options (or the `--tools` file) are available. The LLM invokes them via `TOOL_CALL: name(args)` in its response; the runtime executes the handler, feeds the result back, and the LLM continues.
 
 ### Checkpoint & Resume
 
@@ -556,7 +585,7 @@ SLANG runs in two modes. Not all features are available in both.
 | `@out`, `@all`, `@Human` | ✅ | ✅ |
 | `import` composition | ✅ simulated | ✅ |
 | `model:` multi-provider routing | ❌ single LLM | ✅ |
-| `tools:` functional tool execution | ❌ simulated | ✅ |
+| `tools:` functional tool execution | ❌ simulated | ✅ (API or CLI `--tools`) |
 | `retry:` with exponential backoff | ❌ | ✅ |
 | `output:` structured output contracts | ✅ best-effort | ✅ enforced |
 | Parallel agent execution | ❌ sequential | ✅ `Promise.all` |
@@ -585,7 +614,8 @@ examples/
 ├── research.slang    # Competitive research with escalation
 ├── broadcast.slang   # Parallel broadcast and aggregation
 ├── code-review.slang # Code review with tools and structured output
-└── composition.slang # Flow composition with import
+├── composition.slang # Flow composition with import
+└── tools.js          # Example tool handlers for CLI --tools flag
 ```
 
 ## Contributing

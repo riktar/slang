@@ -1,6 +1,6 @@
 -- Competitive research with tools, retry, structured output, and escalation
 -- Features: tools, retry, output schema, commit if, escalate if, model routing, budget
--- Run with: slang run research.slang --adapter openrouter --api-key $OPENROUTER_API_KEY
+-- Run with: slang run research.slang --adapter openrouter --api-key $OPENROUTER_API_KEY --tools examples/tools.js
 
 flow "competitive-research" {
   agent Researcher {
