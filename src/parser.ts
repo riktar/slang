@@ -1,6 +1,7 @@
 // ─── SLANG Parser: Tokens → AST ───
 
 import { Token, TokenType, tokenize, LexerError } from "./lexer.js";
+import { SlangError, SlangErrorCode, formatErrorMessage } from "./errors.js";
 import type {
   Program, FlowDecl, FlowBodyItem, ImportStmt,
   AgentDecl, AgentMeta, Operation, StakeOp, AwaitOp,
@@ -9,26 +10,49 @@ import type {
   Expr, Span, Position, OutputSchema, OutputField,
 } from "./ast.js";
 
-export class ParseError extends Error {
+export class ParseError extends SlangError {
+  public token: Token;
   constructor(
+    code: SlangErrorCode,
     message: string,
-    public token: Token,
+    token: Token,
+    source?: string,
   ) {
-    super(`Parse error at ${token.line}:${token.column}: ${message} (got '${token.value}' [${token.type}])`);
+    super(code, message, token.line, token.column, source);
+    this.token = token;
     this.name = "ParseError";
   }
 }
 
+export interface ParseResult {
+  program: Program;
+  errors: ParseError[];
+}
+
+/** Parse with error recovery — returns AST + collected errors. */
+export function parseWithRecovery(source: string): ParseResult {
+  const tokens = tokenize(source);
+  const parser = new Parser(tokens, source, true);
+  const program = parser.parseProgram();
+  return { program, errors: parser.errors };
+}
+
+/** Parse (fail-fast) — throws on first error. */
 export function parse(source: string): Program {
   const tokens = tokenize(source);
-  const parser = new Parser(tokens);
+  const parser = new Parser(tokens, source, false);
   return parser.parseProgram();
 }
 
 class Parser {
   private pos = 0;
+  public errors: ParseError[] = [];
 
-  constructor(private tokens: Token[]) {}
+  constructor(
+    private tokens: Token[],
+    private source: string,
+    private recovering: boolean,
+  ) {}
 
   // ─── Token Helpers ───
 
@@ -56,7 +80,12 @@ class Parser {
   private expect(type: TokenType, message?: string): Token {
     const t = this.peek();
     if (t.type !== type) {
-      throw new ParseError(message ?? `Expected '${type}'`, t);
+      const msg = message ?? formatErrorMessage(SlangErrorCode.P201, { expected: type, got: t.value });
+      const err = new ParseError(SlangErrorCode.P201, msg, t, this.source);
+      if (!this.recovering) throw err;
+      this.errors.push(err);
+      // Return a synthetic token so parsing can continue
+      return { type, value: "", line: t.line, column: t.column, offset: t.offset };
     }
     return this.advance();
   }
@@ -76,7 +105,16 @@ class Parser {
     const start = this.peek();
     const flows: FlowDecl[] = [];
     while (!this.check(TokenType.EOF)) {
-      flows.push(this.parseFlowDecl());
+      try {
+        flows.push(this.parseFlowDecl());
+      } catch (e) {
+        if (e instanceof ParseError && this.recovering) {
+          this.errors.push(e);
+          this.synchronize([TokenType.Flow]);
+        } else {
+          throw e;
+        }
+      }
     }
     return { type: "Program", flows, span: this.spanFrom(start) };
   }
@@ -109,8 +147,17 @@ class Parser {
         case TokenType.Budget:
           items.push(this.parseBudgetStmt());
           break;
-        default:
-          throw new ParseError("Expected 'import', 'agent', 'converge', or 'budget'", t);
+        default: {
+          const err = new ParseError(
+            SlangErrorCode.P204,
+            formatErrorMessage(SlangErrorCode.P204),
+            t, this.source,
+          );
+          if (!this.recovering) throw err;
+          this.errors.push(err);
+          this.synchronize([TokenType.Import, TokenType.Agent, TokenType.Converge, TokenType.Budget, TokenType.RBrace]);
+          break;
+        }
       }
     }
     return items;
@@ -187,8 +234,18 @@ class Parser {
       case TokenType.Commit: return this.parseCommitOp();
       case TokenType.Escalate: return this.parseEscalateOp();
       case TokenType.When: return this.parseWhenBlock();
-      default:
-        throw new ParseError("Expected operation (stake, await, commit, escalate, when)", t);
+      default: {
+        const err = new ParseError(
+          SlangErrorCode.P203,
+          formatErrorMessage(SlangErrorCode.P203),
+          t, this.source,
+        );
+        if (!this.recovering) throw err;
+        this.errors.push(err);
+        this.synchronize([TokenType.Stake, TokenType.Await, TokenType.Commit, TokenType.Escalate, TokenType.When, TokenType.RBrace]);
+        // Return a dummy commit to keep going
+        return { type: "CommitOp", span: this.spanFrom(t) } as CommitOp;
+      }
     }
   }
 
@@ -388,7 +445,17 @@ class Parser {
     if (t.type === TokenType.Tokens) { kind = "tokens"; this.advance(); }
     else if (t.type === TokenType.Rounds) { kind = "rounds"; this.advance(); }
     else if (t.type === TokenType.Time) { kind = "time"; this.advance(); }
-    else { throw new ParseError("Expected 'tokens', 'rounds', or 'time'", t); }
+    else {
+      const err = new ParseError(
+        SlangErrorCode.P205,
+        formatErrorMessage(SlangErrorCode.P205),
+        t, this.source,
+      );
+      if (!this.recovering) throw err;
+      this.errors.push(err);
+      kind = "rounds"; // fallback
+      this.advance();
+    }
 
     this.expect(TokenType.LParen);
     const value = this.parseExpr();
@@ -509,7 +576,11 @@ class Parser {
       return expr;
     }
 
-    throw new ParseError("Expected expression", t);
+    throw new ParseError(
+      SlangErrorCode.P202,
+      formatErrorMessage(SlangErrorCode.P202),
+      t, this.source,
+    );
   }
 
   private parseListLit(): Expr {
@@ -539,5 +610,13 @@ class Parser {
     return t === TokenType.Stake || t === TokenType.Await ||
            t === TokenType.Commit || t === TokenType.Escalate ||
            t === TokenType.When;
+  }
+
+  /** Advance tokens until we reach one of the synchronization points */
+  private synchronize(syncTokens: TokenType[]): void {
+    while (!this.check(TokenType.EOF)) {
+      if (syncTokens.includes(this.peek().type)) return;
+      this.advance();
+    }
   }
 }

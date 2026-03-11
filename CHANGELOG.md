@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0]
+
+### Added
+
+- **Error System** — centralized error codes, human-friendly messages, and source context
+  - `SlangErrorCode` enum with documented codes: L1xx (lexer), P2xx (parser), R3xx (resolver), E4xx (runtime)
+  - `formatErrorMessage(code, params?)` for template-based human-readable messages
+  - `SlangError` base class with `code`, `line`, `column`, source context display (caret pointer), and `toJSON()` serialization
+  - `LexerError`, `ParseError`, `RuntimeError` all extend `SlangError` with proper error codes and location tracking
+- **Parser Error Recovery** — `parseWithRecovery(source)` returns `{ program, errors }` instead of throwing on first error
+  - Collects all parse errors and returns partial AST for IDE/playground use
+  - Synchronizes to next valid token after encountering an error
+  - Original `parse()` still fails fast for CLI/production use
+- **Runtime Error Improvements** — `RuntimeError` carries line/column from AST operation spans
+  - "No flow found" → `RuntimeError(E400)` with location
+  - "Retries exhausted" → `RuntimeError(E406)` with agent name, retry count, and source location
+- **SLANG Playground** — interactive web playground for writing and testing SLANG flows
+  - React 19 + Vite 6 + Tailwind CSS v4 webapp
+  - Online editor with real-time parsing and error display
+  - SVG dependency graph visualization with color-coded nodes (ready/blocked/deadlocked)
+  - AST viewer with JSON tree
+  - Live execution with echo adapter and streaming event display
+  - Example flows dropdown (hello, review, research, broadcast, deadlock)
+  - CLI: `slang playground [--port N]` — launches the dev server (default port 5174)
+- New exports: `parseWithRecovery`, `ParseResult`, `SlangError`, `SlangErrorCode`, `formatErrorMessage`, `RuntimeError`
+- 21 new tests for error system and parser recovery (175 total)
+
 ## [0.3.2]
 
 ### Added

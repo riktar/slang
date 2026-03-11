@@ -1,8 +1,11 @@
-export { parse } from "./parser.js";
+export { parse, parseWithRecovery } from "./parser.js";
+export type { ParseResult } from "./parser.js";
 export { tokenize, TokenType } from "./lexer.js";
 export type { Token } from "./lexer.js";
 export { ParseError } from "./parser.js";
 export { LexerError } from "./lexer.js";
+export { SlangError, SlangErrorCode, formatErrorMessage } from "./errors.js";
+export { RuntimeError } from "./runtime.js";
 export { resolveDeps, detectDeadlocks, analyzeFlow } from "./resolver.js";
 export type { AgentDep, DepGraph, FlowDiagnostic } from "./resolver.js";
 export { runFlow, serializeFlowState, deserializeFlowState } from "./runtime.js";

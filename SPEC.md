@@ -1,6 +1,6 @@
 # SLANG — Super Language for Agent Negotiation & Governance
 
-## Specification v0.3.2
+## Specification v0.4.0
 
 ---
 
@@ -590,3 +590,73 @@ flow "research" {
   budget: tokens(40000), rounds(4)
 }
 ```
+
+---
+
+## 9. Error Codes
+
+The SLANG toolchain uses a structured error code system. All errors carry a code, a human-readable message, and source location (line/column).
+
+| Range | Component | Description |
+|-------|-----------|-------------|
+| L1xx  | Lexer     | Tokenization errors |
+| P2xx  | Parser    | Syntax errors |
+| R3xx  | Resolver  | Static analysis warnings/errors |
+| E4xx  | Runtime   | Execution errors |
+
+### Lexer Errors
+
+| Code | Description |
+|------|-------------|
+| L100 | Unterminated string literal |
+| L101 | Unexpected character |
+| L102 | Expected agent name after `@` |
+
+### Parser Errors
+
+| Code | Description |
+|------|-------------|
+| P200 | Unexpected token |
+| P201 | Expected specific token |
+| P202 | Expected expression |
+| P203 | Expected operation (`stake`, `await`, `commit`, `escalate`, `when`) |
+| P204 | Expected flow body item (`import`, `agent`, `converge`, `budget`) |
+| P205 | Expected budget kind (`tokens`, `rounds`, `time`) |
+| P206 | Expected agent name |
+| P207 | Expected flow name |
+| P208 | Unclosed block |
+
+### Resolver Errors
+
+| Code | Description |
+|------|-------------|
+| R300 | Unknown agent reference |
+| R301 | Deadlock detected (circular dependency) |
+| R302 | Agent has no `commit` |
+| R303 | Orphan agent (produces but nobody consumes) |
+| R304 | Missing `converge` statement |
+| R305 | Missing `budget` statement |
+
+### Runtime Errors
+
+| Code | Description |
+|------|-------------|
+| E400 | No flow found in source |
+| E401 | LLM adapter call failed |
+| E402 | Budget exceeded |
+| E403 | Runtime deadlock |
+| E404 | Tool handler not found |
+| E405 | Tool execution error |
+| E406 | All retries exhausted |
+
+### Error Recovery
+
+The parser supports an error recovery mode via `parseWithRecovery(source)`. Instead of throwing on the first error, it collects all errors and returns a partial AST:
+
+```typescript
+const { program, errors } = parseWithRecovery(source)
+// program: partial AST (may contain synthetic/dummy nodes)
+// errors: ParseError[] with code, line, column, message
+```
+
+This is used by the playground and IDEs for real-time feedback. For production use, the standard `parse(source)` function still throws on the first error.

@@ -1,5 +1,7 @@
 // ─── SLANG Lexer / Tokenizer ───
 
+import { SlangError, SlangErrorCode, formatErrorMessage } from "./errors.js";
+
 export enum TokenType {
   // Literals
   String = "String",
@@ -98,13 +100,15 @@ export interface Token {
   offset: number;
 }
 
-export class LexerError extends Error {
+export class LexerError extends SlangError {
   constructor(
+    code: SlangErrorCode,
     message: string,
-    public line: number,
-    public column: number,
+    line: number,
+    column: number,
+    source?: string,
   ) {
-    super(`Lexer error at ${line}:${column}: ${message}`);
+    super(code, message, line, column, source);
     this.name = "LexerError";
   }
 }
@@ -243,7 +247,11 @@ export function tokenize(source: string): Token[] {
         }
       }
       if (pos >= source.length) {
-        throw new LexerError("Unterminated string", startLine, startCol);
+        throw new LexerError(
+          SlangErrorCode.L100,
+          formatErrorMessage(SlangErrorCode.L100),
+          startLine, startCol, source,
+        );
       }
       advance(); // closing quote
       tokens.push(makeToken(TokenType.String, str, startLine, startCol, startOffset));
@@ -274,7 +282,11 @@ export function tokenize(source: string): Token[] {
         name += advance();
       }
       if (name === "") {
-        throw new LexerError("Expected agent name after @", startLine, startCol);
+        throw new LexerError(
+          SlangErrorCode.L102,
+          formatErrorMessage(SlangErrorCode.L102),
+          startLine, startCol, source,
+        );
       }
       tokens.push(makeToken(TokenType.AgentRef, name, startLine, startCol, startOffset));
       continue;
@@ -295,7 +307,11 @@ export function tokenize(source: string): Token[] {
       continue;
     }
 
-    throw new LexerError(`Unexpected character: '${ch}'`, startLine, startCol);
+    throw new LexerError(
+      SlangErrorCode.L101,
+      formatErrorMessage(SlangErrorCode.L101, { char: ch }),
+      startLine, startCol, source,
+    );
   }
 
   tokens.push(makeToken(TokenType.EOF, "", line, column, pos));

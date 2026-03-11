@@ -12,6 +12,7 @@
   <a href="#examples">Examples</a> •
   <a href="#cli">CLI</a> •
   <a href="#api">API</a> •
+  <a href="#playground">Playground</a> •
   <a href="#mcp-server">MCP Server</a> •
   <a href="SPEC.md">Spec</a> •
   <a href="GRAMMAR.md">Grammar</a>
@@ -343,6 +344,7 @@ slang run <file.slang>       # Execute a flow
 slang parse <file.slang>     # Dump AST (syntax validation)
 slang check <file.slang>     # Dependency analysis + deadlock detection
 slang prompt                 # Print the zero-setup system prompt
+slang playground             # Launch the web playground
 ```
 
 ### Options
@@ -354,6 +356,7 @@ slang prompt                 # Print the zero-setup system prompt
 | `--model` | Model name (e.g. `gpt-4o`, `claude-sonnet-4-20250514`, `openai/gpt-4o`) |
 | `--base-url` | Custom endpoint (Ollama, local models — OpenAI adapter only) |
 | `--tools` | JS/TS file exporting tool handlers (see [Functional Tools](#functional-tools)) |
+| `--port` | Playground server port (default: `5174`) |
 
 ### Environment Variables
 
@@ -363,6 +366,27 @@ slang prompt                 # Print the zero-setup system prompt
 | `SLANG_API_KEY` | API key (falls back to `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY`). Not needed with `sampling`. |
 | `SLANG_MODEL` | Default model override |
 | `SLANG_BASE_URL` | Custom base URL for OpenAI-compatible endpoints |
+
+---
+
+## Playground
+
+SLANG ships a built-in web playground for writing, parsing, and running flows interactively in the browser.
+
+```bash
+slang playground              # Start on default port 5174
+slang playground --port 3000  # Custom port
+```
+
+Features:
+- **Editor** — write SLANG with real-time parsing and inline error display
+- **Dependency graph** — SVG visualization with color-coded nodes (green = ready, amber = blocked, red = deadlocked)
+- **AST viewer** — inspect the parsed syntax tree as JSON
+- **Run panel** — execute flows with the echo adapter and see streaming events live
+- **Examples** — dropdown with built-in sample flows (hello, review, research, broadcast, deadlock)
+- **Error recovery** — uses `parseWithRecovery()` to show all errors at once, not just the first
+
+The playground runs entirely in the browser (no API key needed) using the echo adapter.
 
 ---
 
@@ -506,6 +530,36 @@ const diagnostics = analyzeFlow(flow)
 // diagnostics: missing converge, unknown recipients, uncommitted agents, etc.
 ```
 
+### Error Handling
+
+SLANG provides structured errors with error codes, human-friendly messages, and source context:
+
+```typescript
+import { parseWithRecovery, SlangError, SlangErrorCode, formatErrorMessage } from '@riktar/slang'
+
+// Error recovery — collect all errors instead of failing on the first
+const { program, errors } = parseWithRecovery(source)
+
+for (const err of errors) {
+  console.log(err.code)     // "P201"
+  console.log(err.line)     // 3
+  console.log(err.column)   // 5
+  console.log(err.message)  // 'P201: Expected `{` but got `agent` (at 3:5)\n   3 | agent Writer\n       ^'
+  console.log(err.toJSON()) // { code, message, line, column }
+}
+
+// Error codes follow a convention:
+// L1xx — Lexer errors (bad characters, unterminated strings)
+// P2xx — Parser errors (unexpected tokens, missing brackets)
+// R3xx — Resolver errors (unknown agents, deadlocks)
+// E4xx — Runtime errors (no flow, retries exhausted, budget exceeded)
+
+// Format a message from a code
+const msg = formatErrorMessage(SlangErrorCode.E406, { max: 3, agent: 'Writer', message: 'timeout' })
+```
+
+All runtime errors (`RuntimeError`) include line/column from the AST, so stack traces point to the exact `.slang` source location.
+
 ---
 
 ## MCP Server
@@ -561,15 +615,19 @@ SLANG doesn't replace SDKs any more than SQL replaced Java. It creates a new cat
 
 ```
 Source (.slang) → Lexer → Parser → AST → Resolver → DepGraph → Runtime → FlowState
+                                    ↓
+                              Error Recovery → ParseResult { program, errors[] }
 ```
 
 | Component | Description |
 |-----------|-------------|
 | **Lexer** | Hand-written tokenizer with line/column tracking |
-| **Parser** | Recursive-descent parser producing a fully typed AST |
+| **Parser** | Recursive-descent parser producing a fully typed AST; error recovery mode via `parseWithRecovery()` |
+| **Error System** | Centralized error codes (L/P/R/E), human-friendly messages, source context with caret pointer |
 | **Resolver** | Dependency graphs, deadlock detection, static analysis |
 | **Runtime** | Async round-based scheduler with mailbox, parallel dispatch, checkpoint, tool execution |
 | **Adapters** | Pluggable LLM backends (MCP Sampling, OpenAI, Anthropic, OpenRouter, Router, Echo) |
+| **Playground** | React + Vite web app with editor, dependency graph visualization, AST viewer, and echo runner |
 
 ## CLI vs Zero-Setup: feature comparison
 
@@ -591,6 +649,8 @@ SLANG runs in two modes. Not all features are available in both.
 | Parallel agent execution | ❌ sequential | ✅ `Promise.all` |
 | Checkpoint & resume | ❌ | ✅ |
 | Static analysis & deadlock detection | ❌ | ✅ |
+| Error codes & recovery mode | ❌ | ✅ |
+| Web playground | ❌ | ✅ (`slang playground`) |
 | OpenRouter / multi-provider | ❌ single LLM | ✅ |
 
 **Zero-setup** is perfect for prototyping, demos, and non-developers. Move to the **CLI/API** when you need real tools, multi-model routing, parallel execution, or production reliability.
@@ -601,13 +661,18 @@ SLANG runs in two modes. Not all features are available in both.
 src/
 ├── index.ts          # Public API exports
 ├── lexer.ts          # Tokenizer
-├── parser.ts         # Recursive-descent parser
+├── parser.ts         # Recursive-descent parser (+ error recovery)
 ├── ast.ts            # AST type definitions
+├── errors.ts         # Error codes, messages, and SlangError base class
 ├── resolver.ts       # Dependency graph & deadlock detection
 ├── runtime.ts        # Async execution engine
 ├── adapter.ts        # LLM adapters (MCP Sampling, OpenAI, Anthropic, OpenRouter, Echo, Router)
 ├── cli.ts            # CLI binary
 └── mcp.ts            # MCP server binary
+playground/
+├── src/              # React + Vite web playground (editor, graph, AST, runner)
+├── vite.config.ts    # Vite config with @slang alias
+└── package.json      # Playground dependencies
 examples/
 ├── hello.slang       # Minimal hello world
 ├── article.slang     # Writer/Reviewer loop with conditionals

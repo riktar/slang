@@ -1,6 +1,6 @@
 {
   "name": "@riktar/slang",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "SLANG — Super Language for Agent Negotiation & Governance",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -19,6 +19,7 @@
   },
   "files": [
     "dist",
+    "playground/dist",
     "ZERO_SETUP_PROMPT.md"
   ],
   "engines": {
@@ -26,10 +27,11 @@
   },
   "scripts": {
     "build": "tsup",
+    "build:playground": "cd playground && npm install && npx vite build",
     "postbuild": "chmod +x dist/cli.js dist/mcp.js",
     "dev": "tsup --watch",
     "test": "node --import tsx/esm --test src/**/*.test.ts",
-    "prepublishOnly": "npm run build && npm test",
+    "prepublishOnly": "npm run build && npm run build:playground && npm test",
     "slang": "node dist/cli.js"
   },
   "keywords": [

@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // ─── SLANG CLI ───
 
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { readFileSync, existsSync } from "node:fs";
+import { resolve, dirname, extname, join } from "node:path";
+import { pathToFileURL, fileURLToPath } from "node:url";
+import { createServer } from "node:http";
 import { parse } from "./parser.js";
 import { resolveDeps, detectDeadlocks } from "./resolver.js";
 import { runFlow, type RuntimeEvent, type FlowState, type ToolHandler } from "./runtime.js";
@@ -19,25 +20,29 @@ import {
 
 function printUsage(): void {
   console.log(`
-  slang — SLANG interpreter v0.3.2
+  slang — SLANG interpreter v0.4.0
 
   USAGE:
     slang run <file.slang>       Execute a SLANG flow with an LLM
     slang parse <file.slang>     Parse and show AST (dry run)
     slang check <file.slang>     Parse and check dependencies
     slang prompt                 Print the zero-setup system prompt
+    slang playground             Launch the web playground (React + Vite)
 
   OPTIONS:
     --adapter <openai|anthropic|openrouter|echo>   LLM adapter (default: echo)
     --model <model-name>                Model override
     --api-key <key>                     API key (or set OPENAI_API_KEY / ANTHROPIC_API_KEY / OPENROUTER_API_KEY)
     --tools <file.js|file.ts>           JS/TS file exporting tool handlers (default export)
+    --port <number>                     Playground server port (default: 5174)
 
   EXAMPLES:
     slang parse examples/research.slang
     slang run examples/research.slang --adapter openai --model gpt-4o
     slang run examples/research.slang --adapter openrouter --tools tools.js
     slang prompt > system_prompt.txt
+    slang playground
+    slang playground --port 3000
   `);
 }
 
@@ -213,7 +218,7 @@ async function cmdRun(args: Record<string, string>): Promise<void> {
   const adapter = getAdapter(args);
   const tools = args["tools"] ? await loadTools(args["tools"]) : undefined;
 
-  console.log(`${COLORS.bold}SLANG v0.3.2${COLORS.reset} — running ${file} with ${(adapter as any).name ?? args["adapter"] ?? "echo"}`);
+  console.log(`${COLORS.bold}SLANG v0.4.0${COLORS.reset} — running ${file} with ${(adapter as any).name ?? args["adapter"] ?? "echo"}`);
   if (tools) {
     console.log(`${COLORS.dim}Tools loaded: ${Object.keys(tools).join(", ")}${COLORS.reset}`);
   }
@@ -281,6 +286,62 @@ function cmdPrompt(): void {
   }
 }
 
+function cmdPlayground(args: Record<string, string>): void {
+  const port = Number(args["port"] ?? "5174");
+
+  // Resolve playground/dist relative to CLI location
+  const cliDir = dirname(fileURLToPath(import.meta.url));
+  const distDir = resolve(cliDir, "../playground/dist");
+
+  if (!existsSync(distDir)) {
+    console.error(`Error: playground build not found at ${distDir}`);
+    console.error(`Run 'npm run build:playground' first.`);
+    process.exit(1);
+  }
+
+  const MIME_TYPES: Record<string, string> = {
+    ".html": "text/html",
+    ".js": "application/javascript",
+    ".css": "text/css",
+    ".json": "application/json",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".ico": "image/x-icon",
+  };
+
+  const server = createServer((req, res) => {
+    let pathname = new URL(req.url ?? "/", `http://localhost:${port}`).pathname;
+
+    // Serve index.html for SPA routes
+    let filePath = join(distDir, pathname);
+    if (!extname(pathname)) {
+      filePath = join(distDir, "index.html");
+    }
+
+    try {
+      const data = readFileSync(filePath);
+      const ext = extname(filePath);
+      res.writeHead(200, { "Content-Type": MIME_TYPES[ext] ?? "application/octet-stream" });
+      res.end(data);
+    } catch {
+      // Fallback to index.html for SPA
+      try {
+        const index = readFileSync(join(distDir, "index.html"));
+        res.writeHead(200, { "Content-Type": "text/html" });
+        res.end(index);
+      } catch {
+        res.writeHead(404);
+        res.end("Not found");
+      }
+    }
+  });
+
+  server.listen(port, () => {
+    console.log(`${COLORS.bold}${COLORS.cyan}⚡ SLANG Playground${COLORS.reset}`);
+    console.log(`${COLORS.dim}Serving at${COLORS.reset} http://localhost:${port}`);
+  });
+}
+
 // ─── Main ───
 
 async function main(): Promise<void> {
@@ -299,6 +360,9 @@ async function main(): Promise<void> {
       break;
     case "prompt":
       cmdPrompt();
+      break;
+    case "playground":
+      cmdPlayground(args);
       break;
     default:
       printUsage();

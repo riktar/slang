@@ -4,12 +4,28 @@
 
 import { parse } from "./parser.js";
 import { resolveDeps, detectDeadlocks, type DepGraph } from "./resolver.js";
+import { SlangError, SlangErrorCode, formatErrorMessage } from "./errors.js";
 import type { LLMAdapter, LLMMessage } from "./adapter.js";
 import type {
   FlowDecl, AgentDecl, Operation, StakeOp, AwaitOp,
   CommitOp, EscalateOp, WhenBlock, FuncCall, Argument,
   Expr, ConvergeStmt, BudgetStmt, BudgetItem,
 } from "./ast.js";
+
+// ─── Runtime Error ───
+
+export class RuntimeError extends SlangError {
+  constructor(
+    code: SlangErrorCode,
+    message: string,
+    line: number,
+    column: number,
+    source?: string,
+  ) {
+    super(code, message, line, column, source);
+    this.name = "RuntimeError";
+  }
+}
 
 // ─── Public Types ───
 
@@ -81,7 +97,11 @@ export type RuntimeEvent =
 export async function runFlow(source: string, options: RuntimeOptions): Promise<FlowState> {
   const program = parse(source);
   if (program.flows.length === 0) {
-    throw new Error("No flow found in source");
+    throw new RuntimeError(
+      SlangErrorCode.E400,
+      formatErrorMessage(SlangErrorCode.E400),
+      1, 1, source,
+    );
   }
   const flow = program.flows[0]!;
   return executeFlow(flow, options);
@@ -374,8 +394,17 @@ async function executeStake(
     }
   }
 
-  // All retries exhausted — the error propagates
-  throw lastError;
+  // All retries exhausted — the error propagates with location info
+  throw new RuntimeError(
+    SlangErrorCode.E406,
+    formatErrorMessage(SlangErrorCode.E406, {
+      max: String(maxAttempts),
+      agent: agentDecl.name,
+      message: lastError?.message ?? "unknown error",
+    }),
+    op.span.start.line,
+    op.span.start.column,
+  );
 }
 
 function sleep(ms: number): Promise<void> {
