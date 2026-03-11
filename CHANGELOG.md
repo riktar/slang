@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0]
+
+### Added
+
+- **`slang init [dir]`** — scaffold a new SLANG project
+  - Generates `hello.slang`, `research.slang`, `tools.js`, `.env.example`
+  - Idempotent: skips files that already exist
+  - Prints next-steps guide after scaffolding
+- **`.env` support** — the CLI automatically loads a `.env` file from the current directory
+  - Standard `KEY=VALUE` format with comments (`#`) and optional quotes
+  - Real environment variables take precedence over `.env` values
+  - Supported: `SLANG_ADAPTER`, `SLANG_API_KEY`, `SLANG_MODEL`, `SLANG_BASE_URL`, plus provider-specific keys
+- CLI now reads `SLANG_ADAPTER`, `SLANG_MODEL`, and `SLANG_BASE_URL` from environment (not just `--flags`)
+- 10 new CLI tests for init scaffolding and .env loading (185 total)
+
+### Changed
+
+- **Playground packaging** — only `playground/dist/` is included in the npm package (380 KB vs 145 MB)
+  - CLI serves pre-built static files via `node:http` instead of spawning Vite
+  - `build:playground` script added for pre-build step
+- CLI version updated to 0.5.0
+
 ## [0.4.0]
 
 ### Added

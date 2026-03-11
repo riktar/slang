@@ -7,8 +7,8 @@
 </p>
 
 <p align="center">
-  <a href="#zero-setup">Zero Setup</a> •
   <a href="#quick-start">Quick Start</a> •
+  <a href="#zero-setup">Zero Setup</a> •
   <a href="#examples">Examples</a> •
   <a href="#cli">CLI</a> •
   <a href="#api">API</a> •
@@ -17,6 +17,47 @@
   <a href="SPEC.md">Spec</a> •
   <a href="GRAMMAR.md">Grammar</a>
 </p>
+
+---
+
+## Quick Start
+
+### 1. Install
+
+```bash
+npm install -g @riktar/slang
+```
+
+### 2. Create a project
+
+```bash
+slang init my-project
+cd my-project
+```
+
+This generates `hello.slang`, `research.slang`, `tools.js`, and `.env.example`.
+
+### 3. Configure (optional)
+
+```bash
+cp .env.example .env
+# Edit .env with your API key — SLANG loads it automatically
+```
+
+### 4. Run
+
+```bash
+slang run hello.slang                                    # echo adapter (no API key needed)
+slang run hello.slang --adapter openrouter               # uses OPENROUTER_API_KEY from .env
+slang run research.slang --adapter openai --tools tools.js
+```
+
+### 5. Explore the playground
+
+```bash
+slang playground
+# Open http://localhost:5174 — edit, visualize, and run flows in the browser
+```
 
 ---
 
@@ -96,35 +137,6 @@ Read this flow out loud:
 > *"The Researcher stakes gather on the competitors and sends it to the Analyst. The Analyst awaits the data, analyzes it, and sends to the Critic. The Critic challenges the analysis and sends feedback back. If the confidence is high enough, commit. Otherwise, escalate to a Human."*
 
 No diagrams. No comments. No onboarding. **A `.slang` file is its own documentation.**
-
----
-
-## Quick Start
-
-### Install
-
-```bash
-npm install @riktar/slang
-```
-
-### Hello World
-
-```
-flow "hello" {
-  agent Greeter {
-    stake greet("world") -> @out
-    commit
-  }
-  converge when: all_committed
-}
-```
-
-```bash
-npx slang run hello.slang --adapter openai --api-key $OPENAI_API_KEY
-
-# Or use OpenRouter for access to 300+ models
-npx slang run hello.slang --adapter openrouter --api-key $OPENROUTER_API_KEY --model openai/gpt-4o
-```
 
 ---
 
@@ -340,6 +352,7 @@ Features shown: `import ... as`, flow composition, `count:` on await, orchestrat
 ## CLI
 
 ```bash
+slang init [dir]             # Scaffold a new SLANG project
 slang run <file.slang>       # Execute a flow
 slang parse <file.slang>     # Dump AST (syntax validation)
 slang check <file.slang>     # Dependency analysis + deadlock detection
@@ -360,12 +373,22 @@ slang playground             # Launch the web playground
 
 ### Environment Variables
 
+The CLI loads a `.env` file from the current directory automatically. No extra setup — just create the file.
+
+```env
+SLANG_ADAPTER=openrouter
+OPENROUTER_API_KEY=sk-or-...
+SLANG_MODEL=openai/gpt-4o
+```
+
 | Variable | Description |
 |----------|-------------|
 | `SLANG_ADAPTER` | `sampling` (default in MCP) \| `openai` \| `anthropic` \| `openrouter` \| `echo` |
 | `SLANG_API_KEY` | API key (falls back to `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY`). Not needed with `sampling`. |
 | `SLANG_MODEL` | Default model override |
 | `SLANG_BASE_URL` | Custom base URL for OpenAI-compatible endpoints |
+
+Real environment variables take precedence over `.env` values. `slang init` generates a `.env.example` template.
 
 ---
 
@@ -651,6 +674,8 @@ SLANG runs in two modes. Not all features are available in both.
 | Static analysis & deadlock detection | ❌ | ✅ |
 | Error codes & recovery mode | ❌ | ✅ |
 | Web playground | ❌ | ✅ (`slang playground`) |
+| Project scaffolding | ❌ | ✅ (`slang init`) |
+| `.env` file support | ❌ | ✅ |
 | OpenRouter / multi-provider | ❌ single LLM | ✅ |
 
 **Zero-setup** is perfect for prototyping, demos, and non-developers. Move to the **CLI/API** when you need real tools, multi-model routing, parallel execution, or production reliability.
@@ -667,7 +692,7 @@ src/
 ├── resolver.ts       # Dependency graph & deadlock detection
 ├── runtime.ts        # Async execution engine
 ├── adapter.ts        # LLM adapters (MCP Sampling, OpenAI, Anthropic, OpenRouter, Echo, Router)
-├── cli.ts            # CLI binary
+├── cli.ts            # CLI binary (init, run, parse, check, prompt, playground)
 └── mcp.ts            # MCP server binary
 playground/
 ├── src/              # React + Vite web playground (editor, graph, AST, runner)

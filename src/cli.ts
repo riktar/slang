@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // ─── SLANG CLI ───
 
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
 import { resolve, dirname, extname, join } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { createServer } from "node:http";
@@ -20,29 +20,34 @@ import {
 
 function printUsage(): void {
   console.log(`
-  slang — SLANG interpreter v0.4.0
+  slang — SLANG interpreter v0.5.0
 
   USAGE:
-    slang run <file.slang>       Execute a SLANG flow with an LLM
-    slang parse <file.slang>     Parse and show AST (dry run)
-    slang check <file.slang>     Parse and check dependencies
-    slang prompt                 Print the zero-setup system prompt
-    slang playground             Launch the web playground (React + Vite)
+    slang init [dir]               Scaffold a new SLANG project
+    slang run <file.slang>         Execute a SLANG flow with an LLM
+    slang parse <file.slang>       Parse and show AST (dry run)
+    slang check <file.slang>       Parse and check dependencies
+    slang prompt                   Print the zero-setup system prompt
+    slang playground               Launch the web playground
 
   OPTIONS:
     --adapter <openai|anthropic|openrouter|echo>   LLM adapter (default: echo)
     --model <model-name>                Model override
-    --api-key <key>                     API key (or set OPENAI_API_KEY / ANTHROPIC_API_KEY / OPENROUTER_API_KEY)
+    --api-key <key>                     API key (or set via .env file)
     --tools <file.js|file.ts>           JS/TS file exporting tool handlers (default export)
     --port <number>                     Playground server port (default: 5174)
 
+  ENVIRONMENT:
+    Place a .env file in the project root. SLANG loads it automatically.
+    Supported variables: SLANG_ADAPTER, SLANG_API_KEY, SLANG_MODEL, SLANG_BASE_URL,
+    OPENAI_API_KEY, ANTHROPIC_API_KEY, OPENROUTER_API_KEY
+
   EXAMPLES:
-    slang parse examples/research.slang
-    slang run examples/research.slang --adapter openai --model gpt-4o
-    slang run examples/research.slang --adapter openrouter --tools tools.js
+    slang init my-project
+    slang run hello.slang --adapter openrouter
+    slang run research.slang --adapter openai --tools tools.js
     slang prompt > system_prompt.txt
     slang playground
-    slang playground --port 3000
   `);
 }
 
@@ -72,8 +77,10 @@ function readSlangFile(filePath: string): string {
 }
 
 function getAdapter(args: Record<string, string>): LLMAdapter {
-  const adapterName = args["adapter"] ?? "echo";
-  const apiKey = args["api-key"] ?? process.env["OPENAI_API_KEY"] ?? process.env["ANTHROPIC_API_KEY"] ?? process.env["OPENROUTER_API_KEY"] ?? "";
+  const adapterName = args["adapter"] ?? process.env["SLANG_ADAPTER"] ?? "echo";
+  const apiKey = args["api-key"] ?? process.env["SLANG_API_KEY"] ?? process.env["OPENAI_API_KEY"] ?? process.env["ANTHROPIC_API_KEY"] ?? process.env["OPENROUTER_API_KEY"] ?? "";
+  const model = args["model"] ?? process.env["SLANG_MODEL"];
+  const baseUrl = args["base-url"] ?? process.env["SLANG_BASE_URL"];
 
   switch (adapterName) {
     case "openai":
@@ -83,8 +90,8 @@ function getAdapter(args: Record<string, string>): LLMAdapter {
       }
       return createOpenAIAdapter({
         apiKey,
-        defaultModel: args["model"],
-        baseUrl: args["base-url"],
+        defaultModel: model,
+        baseUrl,
       });
 
     case "anthropic":
@@ -94,7 +101,7 @@ function getAdapter(args: Record<string, string>): LLMAdapter {
       }
       return createAnthropicAdapter({
         apiKey,
-        defaultModel: args["model"],
+        defaultModel: model,
       });
 
     case "openrouter":
@@ -104,7 +111,7 @@ function getAdapter(args: Record<string, string>): LLMAdapter {
       }
       return createOpenRouterAdapter({
         apiKey,
-        defaultModel: args["model"],
+        defaultModel: model,
       });
 
     case "echo":
@@ -205,6 +212,149 @@ async function loadTools(toolsPath: string): Promise<Record<string, ToolHandler>
   }
 }
 
+// ─── .env Loader ───
+
+function loadEnv(): void {
+  const envPath = resolve(".env");
+  if (!existsSync(envPath)) return;
+
+  const content = readFileSync(envPath, "utf-8");
+  for (const raw of content.split("\n")) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const eqIdx = line.indexOf("=");
+    if (eqIdx === -1) continue;
+    const key = line.slice(0, eqIdx).trim();
+    let value = line.slice(eqIdx + 1).trim();
+    // Strip surrounding quotes
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    // Only set if not already in environment (real env vars take precedence)
+    if (!(key in process.env)) {
+      process.env[key] = value;
+    }
+  }
+}
+
+// ─── Scaffold Templates ───
+
+const INIT_HELLO_SLANG = `-- My first SLANG flow
+-- Run with: slang run hello.slang
+
+flow "hello" {
+  agent Greeter {
+    stake greet("world") -> @out
+    commit
+  }
+  converge when: all_committed
+}
+`;
+
+const INIT_TOOLS_JS = `// tools.js — Tool handlers for SLANG flows
+// Usage: slang run flow.slang --adapter openrouter --tools tools.js
+//
+// Each export is an async function: (args) => Promise<string>
+// Only tools declared in the agent's tools: [...] AND present here are available.
+
+export default {
+  async web_search(args) {
+    const query = args.query ?? Object.values(args).join(" ");
+    // Replace with a real search API call
+    return JSON.stringify({ query, results: [{ title: "Example result", url: "https://example.com" }] });
+  },
+
+  async code_exec(args) {
+    const code = args.code ?? "";
+    // Replace with a sandboxed execution environment
+    return JSON.stringify({ status: "success", output: "..." });
+  },
+};
+`;
+
+const INIT_ENV_EXAMPLE = `# SLANG Environment Configuration
+# Copy this file to .env and fill in your values.
+# SLANG loads .env automatically — no extra setup needed.
+
+# Adapter: openai | anthropic | openrouter | echo
+SLANG_ADAPTER=openrouter
+
+# API keys (set the one matching your adapter)
+# OPENAI_API_KEY=sk-...
+# ANTHROPIC_API_KEY=sk-ant-...
+OPENROUTER_API_KEY=sk-or-...
+
+# Default model (optional — adapter default is used otherwise)
+# SLANG_MODEL=openai/gpt-4o
+
+# Custom base URL for OpenAI-compatible endpoints (optional)
+# SLANG_BASE_URL=http://localhost:11434/v1
+`;
+
+const INIT_RESEARCH_SLANG = `-- Research flow with tool usage
+-- Run with: slang run research.slang --tools tools.js
+
+flow "research" {
+  agent Researcher {
+    role: "Web research specialist"
+    tools: [web_search]
+    retry: 2
+
+    stake gather(topic: "AI agents") -> @Analyst
+  }
+
+  agent Analyst {
+    role: "Data analyst and strategist"
+    await data <- @Researcher
+    stake analyze(data, framework: "SWOT") -> @out
+      output: { strengths: "string", weaknesses: "string", score: "number" }
+    commit
+  }
+
+  converge when: all_committed
+  budget: rounds(3)
+}
+`;
+
+function cmdInit(args: Record<string, string>): void {
+  const dir = resolve(args["_file"] ?? ".");
+
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+
+  const files: Array<[string, string]> = [
+    ["hello.slang", INIT_HELLO_SLANG],
+    ["research.slang", INIT_RESEARCH_SLANG],
+    ["tools.js", INIT_TOOLS_JS],
+    [".env.example", INIT_ENV_EXAMPLE],
+  ];
+
+  let created = 0;
+  let skipped = 0;
+  for (const [name, content] of files) {
+    const filePath = join(dir, name);
+    if (existsSync(filePath)) {
+      console.log(`${COLORS.dim}  skip${COLORS.reset}  ${name} (already exists)`);
+      skipped++;
+    } else {
+      writeFileSync(filePath, content, "utf-8");
+      console.log(`${COLORS.green}  create${COLORS.reset}  ${name}`);
+      created++;
+    }
+  }
+
+  const relDir = dir === resolve(".") ? "." : args["_file"]!;
+  console.log(`\n${COLORS.bold}${COLORS.cyan}⚡ SLANG project initialized${COLORS.reset} (${created} created, ${skipped} skipped)`);
+  console.log(`\n  ${COLORS.dim}Next steps:${COLORS.reset}`);
+  if (relDir !== ".") {
+    console.log(`  ${COLORS.dim}  cd ${relDir}${COLORS.reset}`);
+  }
+  console.log(`  ${COLORS.dim}  cp .env.example .env       # add your API key${COLORS.reset}`);
+  console.log(`  ${COLORS.dim}  slang run hello.slang       # run with echo adapter${COLORS.reset}`);
+  console.log(`  ${COLORS.dim}  slang playground            # open the web playground${COLORS.reset}`);
+}
+
 // ─── Commands ───
 
 async function cmdRun(args: Record<string, string>): Promise<void> {
@@ -218,7 +368,7 @@ async function cmdRun(args: Record<string, string>): Promise<void> {
   const adapter = getAdapter(args);
   const tools = args["tools"] ? await loadTools(args["tools"]) : undefined;
 
-  console.log(`${COLORS.bold}SLANG v0.4.0${COLORS.reset} — running ${file} with ${(adapter as any).name ?? args["adapter"] ?? "echo"}`);
+  console.log(`${COLORS.bold}SLANG v0.5.0${COLORS.reset} — running ${file} with ${(adapter as any).name ?? args["adapter"] ?? "echo"}`);
   if (tools) {
     console.log(`${COLORS.dim}Tools loaded: ${Object.keys(tools).join(", ")}${COLORS.reset}`);
   }
@@ -345,10 +495,15 @@ function cmdPlayground(args: Record<string, string>): void {
 // ─── Main ───
 
 async function main(): Promise<void> {
+  loadEnv();
+
   const args = parseArgs(process.argv.slice(2));
   const cmd = args["_cmd"];
 
   switch (cmd) {
+    case "init":
+      cmdInit(args);
+      break;
     case "run":
       await cmdRun(args);
       break;

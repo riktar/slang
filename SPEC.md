@@ -1,6 +1,6 @@
 # SLANG — Super Language for Agent Negotiation & Governance
 
-## Specification v0.4.0
+## Specification v0.5.0
 
 ---
 
@@ -660,3 +660,49 @@ const { program, errors } = parseWithRecovery(source)
 ```
 
 This is used by the playground and IDEs for real-time feedback. For production use, the standard `parse(source)` function still throws on the first error.
+
+---
+
+## 10. CLI Tooling
+
+### 10.1 Project Scaffolding
+
+`slang init [dir]` creates a new SLANG project with the following files:
+
+| File | Description |
+|------|-------------|
+| `hello.slang` | Minimal hello-world flow |
+| `research.slang` | Research flow with tools |
+| `tools.js` | Stub tool handlers (`web_search`, `code_exec`) |
+| `.env.example` | Environment variable template |
+
+If a file already exists, it is skipped. The command is idempotent.
+
+### 10.2 Environment Variables
+
+The SLANG CLI loads a `.env` file from the current working directory automatically at startup. This file uses the standard `KEY=VALUE` format:
+
+```env
+# Comments start with #
+SLANG_ADAPTER=openrouter
+OPENROUTER_API_KEY=sk-or-...
+SLANG_MODEL=openai/gpt-4o
+```
+
+Rules:
+- Lines starting with `#` and blank lines are ignored
+- Values may be optionally quoted with `"` or `'`
+- Real environment variables take precedence over `.env` values
+- The file is optional — the CLI works without it
+
+Supported variables:
+
+| Variable | Description |
+|----------|-------------|
+| `SLANG_ADAPTER` | Default adapter (`openai`, `anthropic`, `openrouter`, `echo`) |
+| `SLANG_API_KEY` | API key (generic, used by any adapter) |
+| `SLANG_MODEL` | Default model override |
+| `SLANG_BASE_URL` | Custom base URL for OpenAI-compatible endpoints |
+| `OPENAI_API_KEY` | OpenAI API key |
+| `ANTHROPIC_API_KEY` | Anthropic API key |
+| `OPENROUTER_API_KEY` | OpenRouter API key |
