@@ -17,6 +17,7 @@ import { runFlow } from "./runtime.js";
 import {
   createOpenAIAdapter,
   createAnthropicAdapter,
+  createOpenRouterAdapter,
   createEchoAdapter,
   createSamplingAdapter,
 } from "./adapter.js";
@@ -38,6 +39,8 @@ function getAdapter() {
       return createOpenAIAdapter({ apiKey, defaultModel: model, baseUrl });
     case "anthropic":
       return createAnthropicAdapter({ apiKey, defaultModel: model });
+    case "openrouter":
+      return createOpenRouterAdapter({ apiKey, defaultModel: model });
     case "sampling":
       return createSamplingAdapter(server, model);
     default:
@@ -48,7 +51,7 @@ function getAdapter() {
 // ─── MCP Server ───
 
 const server = new Server(
-  { name: "slang", version: "0.3.0" },
+  { name: "slang", version: "0.3.1" },
   { capabilities: { tools: {} } },
 );
 
@@ -69,9 +72,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
           adapter: {
             type: "string",
-            enum: ["sampling", "openai", "anthropic", "echo"],
+            enum: ["sampling", "openai", "anthropic", "openrouter", "echo"],
             description:
-              "LLM adapter to use. 'sampling' (default) delegates to the MCP host (Claude Code, etc.) — no API key needed. Use 'openai' or 'anthropic' for direct API access.",
+              "LLM adapter to use. 'sampling' (default) delegates to the MCP host (Claude Code, etc.) — no API key needed. Use 'openai', 'anthropic', or 'openrouter' for direct API access.",
           },
           api_key: {
             type: "string",
@@ -167,6 +170,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           case "anthropic":
             adapter = createAnthropicAdapter({
               apiKey: argApiKey ?? process.env.ANTHROPIC_API_KEY ?? "",
+              defaultModel: argModel,
+            });
+            break;
+          case "openrouter":
+            adapter = createOpenRouterAdapter({
+              apiKey: argApiKey ?? process.env.OPENROUTER_API_KEY ?? "",
               defaultModel: argModel,
             });
             break;

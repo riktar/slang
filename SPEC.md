@@ -1,6 +1,6 @@
 # SLANG — Super Language for Agent Negotiation & Governance
 
-## Specification v0.3.0
+## Specification v0.3.1
 
 ---
 
@@ -336,9 +336,13 @@ const router = createRouterAdapter({
     { pattern: "gpt-*",    adapter: openaiAdapter },
     { pattern: "local/*",  adapter: ollamaAdapter },
   ],
-  fallback: openaiAdapter,
+  fallback: openRouterAdapter,
 });
 ```
+
+With this configuration, `model: "claude-sonnet"` routes to Anthropic, `model: "gpt-4o"` routes to OpenAI, `model: "local/llama3"` routes to a local Ollama instance, and any unmatched model falls back to OpenRouter — all within the same flow.
+
+Available adapters: MCP Sampling, OpenAI, Anthropic, OpenRouter, Echo, Router.
 
 ### 5.4 Retry & Error Handling
 

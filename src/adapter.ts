@@ -151,6 +151,58 @@ export function createSamplingAdapter(server: Server, defaultModel?: string): LL
   };
 }
 
+// ─── OpenRouter Adapter ───
+// Routes through OpenRouter (https://openrouter.ai) which provides
+// access to hundreds of models (OpenAI, Anthropic, Meta, Google, etc.)
+// via a single OpenAI-compatible API.
+
+export interface OpenRouterAdapterConfig {
+  apiKey: string;
+  defaultModel?: string;
+  /** Optional site URL sent as HTTP-Referer for OpenRouter analytics */
+  siteUrl?: string;
+  /** Optional app name sent as X-Title for OpenRouter analytics */
+  appName?: string;
+}
+
+export function createOpenRouterAdapter(config: OpenRouterAdapterConfig): LLMAdapter {
+  const defaultModel = config.defaultModel ?? "openai/gpt-4o";
+
+  return {
+    name: `openrouter/${defaultModel}`,
+    async call(messages: LLMMessage[], model?: string): Promise<LLMResponse> {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.apiKey}`,
+      };
+      if (config.siteUrl) headers["HTTP-Referer"] = config.siteUrl;
+      if (config.appName) headers["X-Title"] = config.appName;
+
+      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          model: model ?? defaultModel,
+          messages,
+          temperature: 0.7,
+          max_tokens: 4096,
+        }),
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`OpenRouter API error ${res.status}: ${errText}`);
+      }
+
+      const data = (await res.json()) as any;
+      return {
+        content: data.choices[0].message.content ?? "",
+        tokensUsed: data.usage?.total_tokens ?? 0,
+      };
+    },
+  };
+}
+
 // ─── Echo Adapter (for testing) ───
 
 export function createEchoAdapter(): LLMAdapter {

@@ -1,15 +1,14 @@
 <h1 align="center">🗣️ SLANG</h1>
 
 <p align="center">
-  <strong>Super Language for Agent Negotiation & Governance</strong><br/>
-  A minimal, LLM-native meta-language for orchestrating multi-agent workflows.
+  <strong>The SQL of AI agents.</strong><br/>
+  A declarative meta-language for orchestrating multi-agent workflows.<br/>
+  Readable by humans. Executable by LLMs. Portable across models.
 </p>
 
 <p align="center">
+  <a href="#zero-setup">Zero Setup</a> •
   <a href="#quick-start">Quick Start</a> •
-  <a href="#why-slang">Why SLANG</a> •
-  <a href="#exchange-algebra">Exchange Algebra</a> •
-  <a href="#language-overview">Language</a> •
   <a href="#examples">Examples</a> •
   <a href="#cli">CLI</a> •
   <a href="#api">API</a> •
@@ -20,202 +19,82 @@
 
 ---
 
-## Why SLANG?
+## SLANG is not a framework.
 
-Most agent frameworks require you to write glue code in Python or TypeScript. **SLANG is different** — it's a language that both humans and LLMs can read, write, and execute natively.
+> SLANG is the acronymous for <strong>Super Language for Agent Negotiation & Governance</strong>
 
-| Problem | SLANG Solution |
-|---------|---------------|
-| Agent workflows buried in code | Declarative `.slang` files — readable like pseudocode |
-| LLMs can't understand framework boilerplate | Three primitives: `stake`, `await`, `commit` |
-| Switching LLM providers = rewrite | Pluggable adapters (MCP Sampling, OpenAI, Anthropic, Ollama, any OpenAI-compatible) + router adapter for multi-provider flows |
-| No tooling? No execution. | **Zero-setup mode** — paste a prompt, any LLM becomes an interpreter |
-| Hard to debug agent communication | Built-in dependency graph, deadlock detection, extended static analysis, budget limits |
-| Process crashes lose all progress | **Checkpoint & resume** — persist state after each round, resume from last snapshot |
-| Tool declarations are decorative | **Functional tools** — `tools: [web_search]` + runtime handlers = real tool execution |
+Frameworks like LangChain, CrewAI, and AutoGen are SDKs — Python/TypeScript libraries with classes, decorators, and configuration files. SLANG is none of those things.
 
-### Three primitives. That's the whole language.
+**SLANG is a language.** Like SQL is a language for querying data, SLANG is a language for orchestrating agents.
 
-```
-stake   →  produce content and deliver it to an agent
-await   →  block until another agent sends you data
-commit  →  accept a final result and terminate
-```
+| SQL | SLANG |
+|-----|-------|
+| Didn't replace C/Java for business logic | Doesn't replace TypeScript/Python for complex pipelines |
+| Created a new category: declarative queries | Creates a new category: declarative agent orchestration |
+| Anyone reads it, anyone understands it | Anyone reads a `.slang` file, anyone understands the workflow |
+| Portable: same SQL runs on Postgres, MySQL, SQLite | Portable: same `.slang` runs on GPT, Claude, Llama, Gemini — via OpenRouter, 300+ models with one API key |
+| LLMs generate it natively (text-to-SQL) | LLMs generate it natively (text-to-SLANG) |
+| Not Turing-complete — and that's the point | Not general-purpose — and that's the point |
 
 ---
 
-## Exchange Algebra
-
-Every agent framework today thinks in pipelines: "do A, then B, then C." Even when they parallelize, the mental model is a directed graph — nodes and arrows.
-
-**Exchange Algebra starts from a different observation**: if you look at what agents actually *do*, they only do three things:
-
-1. Produce an output and direct it to someone → **`stake`**
-2. Wait for input from someone → **`await`**
-3. Decide whether the result is acceptable or another iteration is needed → **`commit | escalate`**
-
-Everything else — pipelines, DAGs, loops, branching, error handling — is a combination of these three operations.
-
-### Why `stake` and not `send`
-
-The word `stake` is not accidental. It's not a simple "send message." It means **"I put forward a claim"** — like saying "I'd bet my life that...". This has a huge practical implication:
+## Three primitives. That's it.
 
 ```
-agent Analyst {
-  stake find_trends(data) -> @Critic
-}
+stake   →  produce content and send it to an agent
+await   →  block until another agent sends you data
+commit  →  accept the result and stop
 ```
 
-The `Analyst` is not just sending data to the `Critic`. It is *declaring*: "I assert that these are the trends." This subtle semantic difference means:
+Every multi-agent workflow — pipelines, DAGs, loops, reviews, escalations — is a combination of these three operations. Nothing else to learn. An LLM picks it up in 30 seconds. Your PM reads it without documentation.
 
-- The output has an **owner** — the Analyst is accountable for it
-- The output is **contestable** — the Critic can reject it
-- The output has an **implicit cost** — tokens were spent to produce it
+Compare: CrewAI has 50+ classes. LangGraph needs decorators, typed state, and YAML config. SLANG has three words.
 
-In a traditional framework, an agent produces output and that's it. There is no concept of ownership, contestability, or accountability. In SLANG, it's built into the language.
+---
 
-### Why `await` and not `receive`
+## Zero Setup
 
-`await` is not a simple "receive." It's a **dependency declaration**:
+No install. No API key. No runtime.
 
-```
-agent Critic {
-  await claim <- @Analyst
-  stake verify(claim, sources: 3) -> @Analyst
-}
-```
+1. Copy the [system prompt](ZERO_SETUP_PROMPT.md)
+2. Paste it into ChatGPT, Claude, Gemini — any LLM
+3. Paste a `.slang` flow
+4. It runs.
 
-The `Critic` doesn't poll. It doesn't ask "is there something for me?". It *declares*: "I exist to receive claims from Analyst." This lets the runtime (or the LLM itself) to:
+The LLM **is** the runtime. No `pip install`, no `npm install`, no configuration. This is something no SDK can offer — because an SDK requires an SDK.
 
-- Know **who depends on whom** without building an explicit DAG
-- Know **what can run in parallel** — everything without pending `await`s
-- **Detect deadlocks** — two agents waiting on each other with no pending `stake`
+---
 
-### Why `commit | escalate` is the Key Primitive
-
-This is the primitive no other framework has:
+## Same flow, any model.
 
 ```
-commit verdict    if verdict.confidence > 0.8
-escalate @Arbiter if verdict.confidence <= 0.8
-```
-
-**`commit`** means: "this result is acceptable, we stop here." It's a *local termination criterion* — each agent knows when it's done. No orchestrator needed to say "ok, enough."
-
-**`escalate`** means: "I can't resolve this, someone else is needed." It's a *declarative fallback* — not error handling, not a try/catch. It's an explicit declaration that the local strategy has failed and a higher-level strategy is required.
-
-This solves the biggest problem in multi-agent systems: **how do they stop?** Today the answer is: timers, `max_iterations`, or hope. With `commit`/`escalate`, termination is *emergent* — the system converges when enough agents have committed.
-
-```
-converge when: committed_count >= 1
-budget: tokens(50k), rounds(5)
-```
-
-`converge` is the global safety net. `budget` is the hard constraint. But normal termination comes from local `commit`s.
-
-### End-to-End Runtime Example
-
-Here's how exchange algebra plays out in a real pricing strategy flow:
-
-```
-flow "pricing-strategy" {
+flow "hybrid-analysis" {
   agent Researcher {
-    stake gather(competitors: ["A", "B", "C"]) -> @Analyst
+    model: "gpt-4o"              -- routed to OpenAI
+    tools: [web_search]
+    stake gather(topic: "quantum computing") -> @Analyst
   }
-
   agent Analyst {
+    model: "claude-sonnet"       -- routed to Anthropic
     await data <- @Researcher
-    stake recommend(pricing_model, based_on: data) -> @Validator
-    await feedback <- @Validator
-
-    commit feedback   if feedback.approved
-    escalate @Human   if feedback.rejected
-  }
-
-  agent Validator {
-    await recommendation <- @Analyst
-    stake validate(recommendation, against: [
-      "margin > 20%",
-      "market_share_impact > neutral"
-    ]) -> @Analyst
-  }
-
-  converge when: committed_count >= 1
-  budget: tokens(30k), rounds(3)
-}
-```
-
-**What happens at runtime:**
-
-1. The runtime reads the flow. Only `Researcher` has no pending `await` → it runs first.
-2. `Researcher` stakes → output goes to `Analyst`. `Analyst`'s `await data <- @Researcher` is satisfied → it starts.
-3. `Analyst` stakes a recommendation → goes to `Validator`. `Validator`'s `await` is satisfied → it starts.
-4. `Validator` checks against explicit criteria. Stakes verdict back to `Analyst`.
-5. `Analyst` receives feedback:
-   - `feedback.approved` → **`commit`**. Flow terminates.
-   - `feedback.rejected` → **`escalate @Human`**. A human must intervene.
-
-> Nobody described a DAG. Nobody wrote `step_1 -> step_2 -> step_3`. Execution order *emerges* from `stake`/`await` dependencies. Add a fourth agent and you don't rewrite the flow — just declare what it produces and what it awaits.
-
-### The Moat
-
-The moat is not technical. Any framework can copy the syntax. The moat is **cognitive and network-based**, operating on three levels.
-
-#### 1. LLM-Native Means Zero Tooling
-
-SLANG doesn't need a separate runtime. An LLM can read, generate, and *execute* SLANG in the same conversation:
-
-> "User: organize a research on X with three agents"
-> "LLM: here's the SLANG flow → [generates it] → [executes it] → here's the result"
-
-No other standard can do this. JSON Schema needs a parser. MCP needs a server. **SLANG is structured natural language — an LLM processes it natively. The runtime is the LLM itself.**
-
-This means adoption at zero cost. Nothing to install, nothing to configure. Paste a SLANG flow in a chat and it works. The switching cost is zero to enter, but high to exit once you have a library of flows.
-
-#### 2. Composability = Network Effect
-
-```
-flow "full-report" {
-  import "pricing-strategy" as pricing
-  import "competitor-analysis" as competitors
-  import "market-sizing" as market
-
-  agent Orchestrator {
-    stake run(pricing)     -> @Compiler
-    stake run(competitors) -> @Compiler
-    stake run(market)      -> @Compiler
-  }
-
-  agent Compiler {
-    await results <- @Orchestrator (count: 3)
-    stake compile(results) -> @out
+    stake analyze(data) -> @out
     commit
   }
+  converge when: all_committed
 }
 ```
 
-SLANG flows are composable. Import one inside another. This creates a **network effect**: the more flows exist, the easier it is to build new ones, and the more expensive it is to migrate. Exactly like npm for JavaScript — the value is not in the package manager, it's in the catalog.
+The same `.slang` file runs on GPT-4o, Claude, Llama via Ollama, or **300+ models via [OpenRouter](https://openrouter.ai)** with a single API key. With the router adapter, **different agents use different providers in the same execution**. No vendor lock-in. Switch models by changing one line.
 
-#### 3. The Language Is the Documentation
+---
 
-A SLANG flow is self-documenting. Read it out loud:
+## Human-readable by design.
 
-*"The Researcher stakes gather on competitors A, B, C and sends it to the Analyst. The Analyst awaits data from the Researcher, recommends a pricing model, and sends to the Validator. If the Validator approves, commit. If rejected, escalate to a Human."*
+Read this flow out loud:
 
-No comments needed. No documentation needed. No diagrams needed. **The code is the diagram.** This reduces onboarding cost to zero — anyone reading SLANG understands what the system does, including LLMs that have never seen it before.
+> *"The Researcher stakes gather on the competitors and sends it to the Analyst. The Analyst awaits the data, analyzes it, and sends to the Critic. The Critic challenges the analysis and sends feedback back. If the confidence is high enough, commit. Otherwise, escalate to a Human."*
 
-### Traditional Frameworks vs. SLANG Exchange Algebra
-
-| | Traditional Frameworks | SLANG Exchange Algebra |
-|---|---|---|
-| Mental model | Pipeline / DAG | Exchanges between agents |
-| Execution order | Explicit (defined by human) | Emergent (from dependencies) |
-| Termination | Timer / `max_iterations` | Local `commit` / `escalate` |
-| Runtime required | Yes (SDK, server) | No — the LLM *is* the runtime |
-| Composability | Limited | Native `import` / compose |
-| Readability | Code or JSON | Structured natural language |
-
-> **The moat**: zero adoption cost + network effect on flows + the LLM is the runtime. Anyone can copy the syntax. No one can copy a catalog of thousands of reusable flows.
+No diagrams. No comments. No onboarding. **A `.slang` file is its own documentation.**
 
 ---
 
@@ -230,7 +109,6 @@ npm install @riktar/slang
 ### Hello World
 
 ```
--- hello.slang
 flow "hello" {
   agent Greeter {
     stake greet("world") -> @out
@@ -242,69 +120,52 @@ flow "hello" {
 
 ```bash
 npx slang run hello.slang --adapter openai --api-key $OPENAI_API_KEY
+
+# Or use OpenRouter for access to 300+ models
+npx slang run hello.slang --adapter openrouter --api-key $OPENROUTER_API_KEY --model openai/gpt-4o
 ```
 
-### Zero Setup (no install needed!)
+---
 
-Copy the [system prompt](ZERO_SETUP_PROMPT.md), paste it into ChatGPT / Claude / Gemini, then paste any `.slang` flow. The LLM interprets it natively — no runtime, no dependencies.
+## Who is SLANG for?
 
-## Language Overview
+### PMs, analysts, researchers — no code needed
 
-SLANG builds on three operations applied to **agents** inside a **flow**:
+Orchestrate AI agents by describing what you want. Paste a flow into ChatGPT and it runs. Like Zapier democratized integrations, SLANG democratizes multi-agent AI.
 
-```
-flow "my-flow" {
+### Developers prototyping fast
 
-  agent Writer {
-    role: "Technical writer"
-    model: "gpt-4o"
+Prototype a multi-agent workflow in 10 lines, run it in 60 seconds. Then decide if you need a full SDK. SLANG is the napkin sketch that actually executes.
 
-    stake write(topic: "AI agents") -> @Reviewer     -- produce & send
-    await feedback <- @Reviewer                       -- wait for data
+### Platform teams building agent products
 
-    when feedback.approved {
-      commit feedback                                 -- done!
-    }
-    when feedback.rejected {
-      stake revise(feedback) -> @Reviewer             -- try again
-    }
-  }
+A portable format for agent workflows. The Dockerfile of AI orchestration. Share `.slang` files across teams, import flows like packages, run them on any backend.
 
-  agent Reviewer {
-    role: "Senior editor"
-    await draft <- @Writer
-    stake review(draft) -> @Writer
-  }
-
-  converge when: committed_count >= 1
-  budget: rounds(3)
-}
-```
-
-### Key Features
-
-- **Agents** with natural language `role:`, `model:` selection, `tools:` lists, `retry:` count
-- **Functional tools** — `tools: [web_search]` + runtime handlers = real tool execution during `stake`
-- **Checkpoint & resume** — persist `FlowState` after each round, resume after crash
-- **Structured output** — `output: { field: "type" }` contracts on `stake` operations
-- **Retry with backoff** — `retry: N` in agent meta; exponential backoff on LLM failures
-- **Conditionals** — inline `if` on any operation; block `when expr { ... }`
-- **Budget & convergence** — `budget: tokens(N), rounds(N), time(Ns)` + custom convergence conditions
-- **Composition** — `import "other.slang" as alias` for reusable flows
-- **Special recipients** — `@out` (flow output), `@all` (broadcast), `@Human` (human-in-the-loop)
-- **State access** — `@Agent.output`, `@Agent.status`, `round`, `tokens_used`
-- **Extended static analysis** — deadlocks, orphan agents, missing commits, unknown recipients
-- **Parallel execution** — independent agents dispatch LLM calls concurrently within each round
-- **Multi-endpoint routing** — route agents to different LLM providers via `model:` + router adapter
+---
 
 ## Examples
 
-### Writer/Reviewer Loop
+### Minimal — Hello World
+
+```
+flow "hello" {
+  agent Greeter {
+    stake greet("world") -> @out
+    commit
+  }
+  converge when: all_committed
+}
+```
+
+### Writer/Reviewer loop with conditionals
 
 ```
 flow "article" {
   agent Writer {
     role: "Technical writer specializing in clear, concise articles"
+    model: "gpt-4o"
+    retry: 2
+
     stake write(topic: "Why multi-agent systems need a standard language") -> @Reviewer
     await feedback <- @Reviewer
 
@@ -318,8 +179,11 @@ flow "article" {
 
   agent Reviewer {
     role: "Senior editor focused on clarity, accuracy, and completeness"
+    model: "claude-sonnet"
+
     await draft <- @Writer
     stake review(draft, criteria: ["clarity", "accuracy", "completeness"]) -> @Writer
+      output: { approved: "boolean", score: "number", notes: "string" }
   }
 
   converge when: committed_count >= 1
@@ -327,28 +191,37 @@ flow "article" {
 }
 ```
 
-### Competitive Research (3 agents)
+Features shown: `role:`, `model:`, `retry:`, `when` blocks, `output:` schema, `converge`, `budget`.
+
+### Competitive research with escalation and tools
 
 ```
 flow "competitive-research" {
   agent Researcher {
     role: "Expert web researcher focused on primary sources and data"
+    model: "openai/gpt-4o"
+    tools: [web_search]
+    retry: 3
+
     stake gather(competitors: ["OpenAI", "Anthropic", "Google DeepMind"],
-                 focus: "AI agent frameworks 2026") -> @Analyst
+                 focus: "AI agent frameworks") -> @Analyst
   }
 
   agent Analyst {
     role: "Strategic analyst specializing in competitive positioning"
+    model: "anthropic/claude-sonnet-4-20250514"
     await data <- @Researcher
     stake analyze(data, framework: "SWOT") -> @Critic
+      output: { strengths: "string", weaknesses: "string", score: "number" }
     await verdict <- @Critic
 
     commit verdict if verdict.confidence > 0.7
-    escalate @Human reason: "Analysis confidence too low" if verdict.confidence <= 0.7
+    escalate @Human reason: "Analysis confidence too low, need human review" if verdict.confidence <= 0.7
   }
 
   agent Critic {
     role: "Adversarial reviewer who challenges assumptions"
+    model: "google/gemini-2.5-pro"
     await analysis <- @Analyst
     stake challenge(analysis, mode: "steelmanning") -> @Analyst
   }
@@ -357,6 +230,111 @@ flow "competitive-research" {
   budget: tokens(40000), rounds(4)
 }
 ```
+
+Features shown: `model:` with OpenRouter model IDs (3 different providers in same flow), `tools:`, `retry:`, `output:`, `escalate @Human`, `if` conditions, `tokens` + `rounds` budget.
+
+### Broadcast and multi-source aggregation
+
+```
+flow "parallel-report" {
+  agent Coordinator {
+    role: "Project coordinator who distributes tasks and compiles results"
+    stake assign(sections: ["market", "technology", "finance"]) -> @all
+    await results <- *
+    stake compile(results) -> @out
+    commit
+  }
+
+  agent MarketAnalyst {
+    role: "Market research specialist"
+    await task <- @Coordinator
+    stake research(task, focus: "market trends and sizing") -> @Coordinator
+  }
+
+  agent TechAnalyst {
+    role: "Technology trend analyst"
+    await task <- @Coordinator
+    stake research(task, focus: "technology landscape and innovation") -> @Coordinator
+  }
+
+  agent FinanceAnalyst {
+    role: "Financial analyst specializing in projections"
+    await task <- @Coordinator
+    stake research(task, focus: "financial projections and unit economics") -> @Coordinator
+  }
+
+  converge when: all_committed
+  budget: rounds(3)
+}
+```
+
+Features shown: `@all` broadcast, `*` wildcard source, 4 parallel agents, coordinator pattern.
+
+### Code review with tools and structured output
+
+```
+flow "code-review" {
+  agent Developer {
+    role: "Senior software engineer"
+    tools: [code_exec]
+    retry: 2
+
+    stake implement(spec: "REST API endpoint for user registration",
+                    language: "TypeScript") -> @Reviewer
+      output: { code: "string", tests: "string", language: "string" }
+    await feedback <- @Reviewer
+
+    when feedback.approved {
+      commit feedback
+    }
+    when feedback.rejected {
+      stake revise(feedback.notes, original: feedback) -> @Reviewer
+        output: { code: "string", tests: "string", language: "string" }
+    }
+  }
+
+  agent Reviewer {
+    role: "Staff engineer focused on security, performance, and best practices"
+    tools: [code_exec]
+
+    await code <- @Developer
+    stake review(code, checks: ["security", "performance", "error handling"]) -> @Developer
+      output: { approved: "boolean", score: "number", notes: "string" }
+  }
+
+  converge when: committed_count >= 1
+  budget: rounds(4)
+}
+```
+
+Features shown: `tools: [code_exec]`, `output:` on multiple stakes, `when` blocks, review loop pattern.
+
+### Composition — importing flows
+
+```
+flow "full-report" {
+  import "research" as research_flow
+  import "article" as article_flow
+
+  agent Orchestrator {
+    stake run(research_flow, topic: "AI agents market 2026") -> @Compiler
+    stake run(article_flow, topic: "Executive summary") -> @Compiler
+  }
+
+  agent Compiler {
+    await results <- @Orchestrator (count: 2)
+    stake compile(results, format: "executive briefing") -> @out
+    commit
+  }
+
+  converge when: all_committed
+  budget: rounds(5)
+}
+```
+
+Features shown: `import ... as`, flow composition, `count:` on await, orchestration pattern.
+
+---
 
 ## CLI
 
@@ -371,19 +349,21 @@ slang prompt                 # Print the zero-setup system prompt
 
 | Flag | Description |
 |------|-------------|
-| `--adapter` | `openai` \| `anthropic` \| `echo` (CLI only; MCP default is `sampling`) |
+| `--adapter` | `openai` \| `anthropic` \| `openrouter` \| `echo` (CLI only; MCP default is `sampling`) |
 | `--api-key` | LLM API key (not required with `sampling`) |
-| `--model` | Model name (e.g. `gpt-4o`, `claude-sonnet-4-20250514`) |
-| `--base-url` | Custom endpoint (Ollama, local models) |
+| `--model` | Model name (e.g. `gpt-4o`, `claude-sonnet-4-20250514`, `openai/gpt-4o`) |
+| `--base-url` | Custom endpoint (Ollama, local models — OpenAI adapter only) |
 
 ### Environment Variables
 
 | Variable | Description |
 |----------|-------------|
-| `SLANG_ADAPTER` | `sampling` (default in MCP) \| `openai` \| `anthropic` \| `echo` |
-| `SLANG_API_KEY` | API key for `openai`/`anthropic` adapters (falls back to `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`). Not needed when using `sampling`. |
+| `SLANG_ADAPTER` | `sampling` (default in MCP) \| `openai` \| `anthropic` \| `openrouter` \| `echo` |
+| `SLANG_API_KEY` | API key (falls back to `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY`). Not needed with `sampling`. |
 | `SLANG_MODEL` | Default model override |
 | `SLANG_BASE_URL` | Custom base URL for OpenAI-compatible endpoints |
+
+---
 
 ## API
 
@@ -392,8 +372,7 @@ SLANG is also a TypeScript/JavaScript library:
 ```typescript
 import { parse, runFlow, createOpenAIAdapter } from '@riktar/slang'
 
-// Parse a .slang file
-const ast = parse(`
+const source = `
   flow "hello" {
     agent Greeter {
       stake greet("world") -> @out
@@ -401,15 +380,88 @@ const ast = parse(`
     }
     converge when: all_committed
   }
-`)
+`
 
-// Execute with an LLM adapter
-const result = await runFlow(source, {
-  adapter: createOpenAIAdapter({
-    apiKey: process.env.OPENAI_API_KEY,
-  }),
+// Parse to AST
+const ast = parse(source)
+
+// Execute with an LLM
+const state = await runFlow(source, {
+  adapter: createOpenAIAdapter({ apiKey: process.env.OPENAI_API_KEY }),
   onEvent: (event) => console.log(event),
 })
+
+console.log(state.status)   // "converged"
+console.log(state.outputs)  // ["Hello, world! ..."]
+```
+
+### Adapters
+
+```typescript
+import {
+  createOpenAIAdapter,       // OpenAI / Ollama / any OpenAI-compatible
+  createAnthropicAdapter,    // Anthropic
+  createOpenRouterAdapter,   // OpenRouter (300+ models, one API key)
+  createSamplingAdapter,     // MCP host delegation (no API key)
+  createEchoAdapter,         // Testing
+  createRouterAdapter,       // Multi-provider routing
+} from '@riktar/slang'
+
+// OpenRouter — access any model with a single key
+const openrouter = createOpenRouterAdapter({
+  apiKey: process.env.OPENROUTER_API_KEY,
+  defaultModel: 'openai/gpt-4o',
+})
+
+// Router — different agents, different backends
+const router = createRouterAdapter({
+  routes: [
+    { pattern: 'claude-*',  adapter: anthropicAdapter },
+    { pattern: 'gpt-*',     adapter: openaiAdapter },
+    { pattern: 'local/*',   adapter: ollamaAdapter },
+  ],
+  fallback: openrouter,  // fallback to OpenRouter
+})
+```
+
+### Functional Tools
+
+Make agent `tools:` declarations real:
+
+```typescript
+const state = await runFlow(source, {
+  adapter,
+  tools: {
+    web_search: async (args) => {
+      return await fetchSearchResults(args.query as string)
+    },
+    code_exec: async (args) => {
+      return runSandbox(args.code as string)
+    },
+  },
+})
+```
+
+Only tools listed in the agent's `tools: [...]` declaration **and** provided in runtime options are available. The LLM invokes them via `TOOL_CALL: name(args)` in its response; the runtime executes the handler, feeds the result back, and the LLM continues.
+
+### Checkpoint & Resume
+
+Persist state after each round. Resume after crash:
+
+```typescript
+import { runFlow, serializeFlowState, deserializeFlowState } from '@riktar/slang'
+
+// Run with checkpointing
+const state = await runFlow(source, {
+  adapter,
+  checkpoint: async (snapshot) => {
+    await writeFile('checkpoint.json', serializeFlowState(snapshot))
+  },
+})
+
+// Resume later
+const saved = deserializeFlowState(await readFile('checkpoint.json', 'utf8'))
+const resumed = await runFlow(source, { adapter, resumeFrom: saved })
 ```
 
 ### Static Analysis
@@ -422,157 +474,27 @@ const flow = program.flows[0]
 const graph = resolveDeps(flow)
 const deadlocks = detectDeadlocks(graph)
 const diagnostics = analyzeFlow(flow)
-
-if (deadlocks.length > 0) {
-  console.error('Deadlock detected:', deadlocks)
-}
-for (const d of diagnostics) {
-  console.warn(`[${d.level}] ${d.message}`)
-}
+// diagnostics: missing converge, unknown recipients, uncommitted agents, etc.
 ```
 
-### Adapters
-
-```typescript
-import {
-  createOpenAIAdapter,
-  createAnthropicAdapter,
-  createSamplingAdapter,
-  createEchoAdapter,
-  createRouterAdapter,
-} from '@riktar/slang'
-import type { Server } from '@modelcontextprotocol/sdk/server/index.js'
-
-// MCP Sampling — delegates to the host (Claude Code, Claude Desktop, etc.)
-// No API key required: uses the subscription already active in the host.
-const sampling = createSamplingAdapter(mcpServer as Server)
-
-// OpenAI / OpenAI-compatible (Ollama, vLLM, etc.)
-const openai = createOpenAIAdapter({
-  apiKey: 'sk-...',
-  defaultModel: 'gpt-4o',
-  baseUrl: 'http://localhost:11434/v1', // optional: Ollama
-})
-
-// Anthropic
-const anthropic = createAnthropicAdapter({
-  apiKey: 'sk-ant-...',
-  defaultModel: 'claude-sonnet-4-20250514',
-})
-
-// Echo (testing — returns the prompt as output)
-const echo = createEchoAdapter()
-
-// Router — route to different backends based on model name
-const router = createRouterAdapter({
-  routes: [
-    { pattern: 'claude-*',  adapter: anthropic },
-    { pattern: 'gpt-*',     adapter: openai },
-    { pattern: 'local/*',   adapter: createOpenAIAdapter({
-        apiKey: 'unused',
-        baseUrl: 'http://localhost:11434/v1',
-      })
-    },
-  ],
-  fallback: openai,
-})
-```
-
-### Parallel Execution
-
-By default, the runtime executes independent agents in parallel within each round. All agents whose current operation is a `stake` call are dispatched concurrently, while state-dependent operations (`await`, `commit`, `escalate`) run sequentially.
-
-```typescript
-// Parallel (default)
-const result = await runFlow(source, { adapter })
-
-// Sequential (for debugging / deterministic replay)
-const result = await runFlow(source, { adapter, parallel: false })
-```
-
-### Checkpoint & Resume
-
-Persist flow state after each round so you can resume after a crash:
-
-```typescript
-import { runFlow, serializeFlowState, deserializeFlowState } from '@riktar/slang'
-import { writeFile, readFile } from 'fs/promises'
-
-// Run with checkpointing
-const state = await runFlow(source, {
-  adapter,
-  checkpoint: async (snapshot) => {
-    await writeFile('checkpoint.json', serializeFlowState(snapshot))
-  },
-})
-
-// Resume from checkpoint
-const saved = deserializeFlowState(await readFile('checkpoint.json', 'utf8'))
-const resumed = await runFlow(source, { adapter, resumeFrom: saved })
-```
-
-### Functional Tools
-
-Make agent `tools:` declarations functional by providing runtime handlers:
-
-```typescript
-const state = await runFlow(source, {
-  adapter,
-  tools: {
-    web_search: async (args) => {
-      const results = await fetch(`https://api.search.com?q=${args.query}`)
-      return await results.text()
-    },
-    code_exec: async (args) => {
-      return runSandbox(args.code as string)
-    },
-  },
-})
-```
-
-The agent's `tools: [web_search]` declaration filters which runtime tools are available to it. During a `stake` operation, the LLM can invoke tools via `TOOL_CALL: web_search({"query": "..."})` in its response. The runtime executes the handler, feeds the result back, and lets the LLM continue.
-
-### Multi-Endpoint Routing
-
-Use the router adapter to send different agents to different LLM providers:
-
-```
-flow "hybrid" {
-  agent Researcher {
-    model: "gpt-4o"              -- routed to OpenAI
-    stake gather(topic) -> @Analyst
-  }
-  agent Analyst {
-    model: "claude-sonnet"       -- routed to Anthropic
-    await data <- @Researcher
-    stake analyze(data) -> @out
-    commit
-  }
-  converge when: all_committed
-}
-```
-
-The `model` field on each agent is matched against the router's pattern rules. First match wins. See [SPEC.md](SPEC.md#53-multi-endpoint-routing) for details.
+---
 
 ## MCP Server
 
-SLANG ships a built-in [Model Context Protocol](https://modelcontextprotocol.io/) server for tool-use integration:
+SLANG ships a built-in [Model Context Protocol](https://modelcontextprotocol.io/) server. No API key needed — it delegates LLM calls back to the host via MCP sampling.
 
 ```bash
-# Add to Claude Code — no API key needed, uses your Claude subscription via MCP sampling
+# Add to Claude Code
 claude mcp add slang -- npx --package @riktar/slang slang-mcp
-
-# Or run directly
-npx --package @riktar/slang slang-mcp
 ```
 
 ### Available Tools
 
 | Tool | Description |
 |------|-------------|
-| `run_flow` | Execute a SLANG flow, returns final state and outputs |
+| `run_flow` | Execute a SLANG flow and return final state |
 | `parse_flow` | Parse source to AST JSON |
-| `check_flow` | Dependency graph analysis + deadlock detection + extended diagnostics |
+| `check_flow` | Dependency graph + deadlock detection + diagnostics |
 | `get_zero_setup_prompt` | Get the zero-setup system prompt |
 
 ### Claude Desktop Config
@@ -582,28 +504,29 @@ npx --package @riktar/slang slang-mcp
   "mcpServers": {
     "slang": {
       "command": "npx",
-      "args": ["-y", "--package", "@riktar/slang", "slang-mcp"]
+      "args": ["--package", "@riktar/slang", "slang-mcp"]
     }
   }
 }
 ```
 
-No API key needed — SLANG defaults to the `sampling` adapter and delegates LLM calls back to Claude through the MCP protocol. To use your own OpenAI/Anthropic key instead:
+---
 
-```json
-{
-  "mcpServers": {
-    "slang": {
-      "command": "npx",
-      "args": ["-y", "--package", "@riktar/slang", "slang-mcp"],
-      "env": {
-        "SLANG_ADAPTER": "openai",
-        "SLANG_API_KEY": "your-api-key"
-      }
-    }
-  }
-}
-```
+## Why not just use an SDK?
+
+| | SDK (LangChain, CrewAI, etc.) | SLANG |
+|---|---|---|
+| Time to first workflow | Hours (install, configure, learn API) | 60 seconds (paste and run) |
+| Who can read it | Developers only | Anyone — including LLMs |
+| Portability | Locked to one language/provider | Same file runs anywhere |
+| Composability | Import code | Import workflows (`import "research" as r`) |
+| The LLM can generate it | No (framework boilerplate is opaque) | Yes (text-to-SLANG, like text-to-SQL) |
+| Runtime required | Always | Optional (zero-setup mode) |
+| Documentation | Separate from code | The flow **is** the documentation |
+
+SLANG doesn't replace SDKs any more than SQL replaced Java. It creates a new category: **declarative agent orchestration**. Use SLANG to describe *what* agents should do. Use an SDK when you need fine-grained control over *how*.
+
+---
 
 ## Architecture
 
@@ -615,11 +538,33 @@ Source (.slang) → Lexer → Parser → AST → Resolver → DepGraph → Runti
 |-----------|-------------|
 | **Lexer** | Hand-written tokenizer with line/column tracking |
 | **Parser** | Recursive-descent parser producing a fully typed AST |
-| **Resolver** | Builds dependency graphs, detects deadlocks, extended static analysis |
-| **Runtime** | Async round-based scheduler with mailbox communication and parallel dispatch |
-| **Adapters** | Pluggable LLM backends (MCP Sampling, OpenAI, Anthropic, Router, Echo) |
+| **Resolver** | Dependency graphs, deadlock detection, static analysis |
+| **Runtime** | Async round-based scheduler with mailbox, parallel dispatch, checkpoint, tool execution |
+| **Adapters** | Pluggable LLM backends (MCP Sampling, OpenAI, Anthropic, OpenRouter, Router, Echo) |
 
-The runtime uses a **mailbox pattern** — agents communicate via `"Source->Target"` keyed messages. Each round, all executable (non-blocked) agents with `stake` operations run **in parallel**, and convergence/budget conditions are checked.
+## CLI vs Zero-Setup: feature comparison
+
+SLANG runs in two modes. Not all features are available in both.
+
+| Feature | Zero-Setup (paste in LLM) | CLI / API / MCP |
+|---------|:---:|:---:|
+| Parse & execute flows | ✅ | ✅ |
+| `stake`, `await`, `commit`, `escalate` | ✅ | ✅ |
+| `role:` agent metadata | ✅ | ✅ |
+| `when` / `if` conditionals | ✅ | ✅ |
+| `converge` / `budget` | ✅ | ✅ |
+| `@out`, `@all`, `@Human` | ✅ | ✅ |
+| `import` composition | ✅ simulated | ✅ |
+| `model:` multi-provider routing | ❌ single LLM | ✅ |
+| `tools:` functional tool execution | ❌ simulated | ✅ |
+| `retry:` with exponential backoff | ❌ | ✅ |
+| `output:` structured output contracts | ✅ best-effort | ✅ enforced |
+| Parallel agent execution | ❌ sequential | ✅ `Promise.all` |
+| Checkpoint & resume | ❌ | ✅ |
+| Static analysis & deadlock detection | ❌ | ✅ |
+| OpenRouter / multi-provider | ❌ single LLM | ✅ |
+
+**Zero-setup** is perfect for prototyping, demos, and non-developers. Move to the **CLI/API** when you need real tools, multi-model routing, parallel execution, or production reliability.
 
 ## Project Structure
 
@@ -631,20 +576,18 @@ src/
 ├── ast.ts            # AST type definitions
 ├── resolver.ts       # Dependency graph & deadlock detection
 ├── runtime.ts        # Async execution engine
-├── adapter.ts        # LLM adapters (MCP Sampling, OpenAI, Anthropic, Echo)
+├── adapter.ts        # LLM adapters (MCP Sampling, OpenAI, Anthropic, OpenRouter, Echo, Router)
 ├── cli.ts            # CLI binary
 └── mcp.ts            # MCP server binary
 examples/
 ├── hello.slang       # Minimal hello world
-├── article.slang     # Writer/Reviewer loop
-└── research.slang    # 3-agent competitive research
+├── article.slang     # Writer/Reviewer loop with conditionals
+├── research.slang    # Competitive research with escalation
+├── broadcast.slang   # Parallel broadcast and aggregation
+├── code-review.slang # Code review with tools and structured output
+└── composition.slang # Flow composition with import
 ```
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines. We welcome PRs for:
-
-- New LLM adapters
-- Language features
-- Examples and documentation
-- Bug fixes
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.

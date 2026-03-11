@@ -1,7 +1,7 @@
 # SLANG Language Playbook
 
 > Complete syntax reference, formal grammar, and annotated examples for  
-> **SLANG v0.3.0** — Super Language for Agent Negotiation & Governance.
+> **SLANG v0.3.1** — Super Language for Agent Negotiation & Governance.
 
 ---
 
@@ -495,11 +495,13 @@ const router = createRouterAdapter({
     { pattern: "gpt-*",     adapter: openaiAdapter },
     { pattern: "local/*",   adapter: ollamaAdapter },
   ],
-  fallback: openaiAdapter,
+  fallback: openRouterAdapter,  // OpenRouter as fallback for 300+ models
 });
 ```
 
-With this configuration, `model: "claude-sonnet"` routes to Anthropic, `model: "gpt-4o"` routes to OpenAI, and `model: "local/llama3"` routes to a local Ollama instance — all within the same flow.
+With this configuration, `model: "claude-sonnet"` routes to Anthropic, `model: "gpt-4o"` routes to OpenAI, `model: "local/llama3"` routes to a local Ollama instance, and unmatched models fall back to OpenRouter — all within the same flow.
+
+Available adapters: MCP Sampling, OpenAI, Anthropic, OpenRouter, Echo, Router.
 
 ### Execution Modes
 

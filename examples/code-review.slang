@@ -1,0 +1,35 @@
+-- Code review with tools and structured output
+-- Features: tools (code_exec), output on multiple stakes, when blocks, review loop
+
+flow "code-review" {
+  agent Developer {
+    role: "Senior software engineer"
+    tools: [code_exec]
+    retry: 2
+
+    stake implement(spec: "REST API endpoint for user registration",
+                    language: "TypeScript") -> @Reviewer
+      output: { code: "string", tests: "string", language: "string" }
+    await feedback <- @Reviewer
+
+    when feedback.approved {
+      commit feedback
+    }
+    when feedback.rejected {
+      stake revise(feedback.notes, original: feedback) -> @Reviewer
+        output: { code: "string", tests: "string", language: "string" }
+    }
+  }
+
+  agent Reviewer {
+    role: "Staff engineer focused on security, performance, and best practices"
+    tools: [code_exec]
+
+    await code <- @Developer
+    stake review(code, checks: ["security", "performance", "error handling"]) -> @Developer
+      output: { approved: "boolean", score: "number", notes: "string" }
+  }
+
+  converge when: committed_count >= 1
+  budget: rounds(4)
+}

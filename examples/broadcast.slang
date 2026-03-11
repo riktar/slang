@@ -1,0 +1,33 @@
+-- Parallel broadcast and multi-source aggregation
+-- Features: @all broadcast, * wildcard source, 4 agents, coordinator pattern
+
+flow "parallel-report" {
+  agent Coordinator {
+    role: "Project coordinator who distributes tasks and compiles results"
+    stake assign(sections: ["market", "technology", "finance"]) -> @all
+    await results <- *
+    stake compile(results) -> @out
+    commit
+  }
+
+  agent MarketAnalyst {
+    role: "Market research specialist"
+    await task <- @Coordinator
+    stake research(task, focus: "market trends and sizing") -> @Coordinator
+  }
+
+  agent TechAnalyst {
+    role: "Technology trend analyst"
+    await task <- @Coordinator
+    stake research(task, focus: "technology landscape and innovation") -> @Coordinator
+  }
+
+  agent FinanceAnalyst {
+    role: "Financial analyst specializing in projections"
+    await task <- @Coordinator
+    stake research(task, focus: "financial projections and unit economics") -> @Coordinator
+  }
+
+  converge when: all_committed
+  budget: rounds(3)
+}

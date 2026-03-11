@@ -9,6 +9,7 @@ import { runFlow, type RuntimeEvent, type FlowState } from "./runtime.js";
 import {
   createOpenAIAdapter,
   createAnthropicAdapter,
+  createOpenRouterAdapter,
   createEchoAdapter,
   type LLMAdapter,
 } from "./adapter.js";
@@ -17,7 +18,7 @@ import {
 
 function printUsage(): void {
   console.log(`
-  slang — SLANG interpreter v0.3.0
+  slang — SLANG interpreter v0.3.1
 
   USAGE:
     slang run <file.slang>       Execute a SLANG flow with an LLM
@@ -26,9 +27,9 @@ function printUsage(): void {
     slang prompt                 Print the zero-setup system prompt
 
   OPTIONS:
-    --adapter <openai|anthropic|echo>   LLM adapter (default: echo)
+    --adapter <openai|anthropic|openrouter|echo>   LLM adapter (default: echo)
     --model <model-name>                Model override
-    --api-key <key>                     API key (or set OPENAI_API_KEY / ANTHROPIC_API_KEY)
+    --api-key <key>                     API key (or set OPENAI_API_KEY / ANTHROPIC_API_KEY / OPENROUTER_API_KEY)
 
   EXAMPLES:
     slang parse examples/research.slang
@@ -65,7 +66,7 @@ function readSlangFile(filePath: string): string {
 
 function getAdapter(args: Record<string, string>): LLMAdapter {
   const adapterName = args["adapter"] ?? "echo";
-  const apiKey = args["api-key"] ?? process.env["OPENAI_API_KEY"] ?? process.env["ANTHROPIC_API_KEY"] ?? "";
+  const apiKey = args["api-key"] ?? process.env["OPENAI_API_KEY"] ?? process.env["ANTHROPIC_API_KEY"] ?? process.env["OPENROUTER_API_KEY"] ?? "";
 
   switch (adapterName) {
     case "openai":
@@ -89,11 +90,21 @@ function getAdapter(args: Record<string, string>): LLMAdapter {
         defaultModel: args["model"],
       });
 
+    case "openrouter":
+      if (!apiKey) {
+        console.error("Error: --api-key or OPENROUTER_API_KEY required for OpenRouter adapter");
+        process.exit(1);
+      }
+      return createOpenRouterAdapter({
+        apiKey,
+        defaultModel: args["model"],
+      });
+
     case "echo":
       return createEchoAdapter();
 
     default:
-      console.error(`Error: unknown adapter '${adapterName}'. Use: openai, anthropic, echo`);
+      console.error(`Error: unknown adapter '${adapterName}'. Use: openai, anthropic, openrouter, echo`);
       process.exit(1);
   }
 }
@@ -173,7 +184,7 @@ async function cmdRun(args: Record<string, string>): Promise<void> {
   const source = readSlangFile(file);
   const adapter = getAdapter(args);
 
-  console.log(`${COLORS.bold}SLANG v0.3.0${COLORS.reset} — running ${file} with ${(adapter as any).name ?? args["adapter"] ?? "echo"}`);
+  console.log(`${COLORS.bold}SLANG v0.3.1${COLORS.reset} — running ${file} with ${(adapter as any).name ?? args["adapter"] ?? "echo"}`);
 
   const state = await runFlow(source, { adapter, onEvent: eventHandler });
   printFlowResult(state);

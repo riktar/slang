@@ -5,7 +5,16 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.1]
+
+### Added
+
+- **OpenRouter Adapter** — `createOpenRouterAdapter()` for access to 300+ models via [OpenRouter](https://openrouter.ai) with a single API key
+  - Supports `siteUrl` and `appName` options for OpenRouter analytics
+  - `OpenRouterAdapterConfig` type exported from public API
+- CLI: `--adapter openrouter` option; falls back to `OPENROUTER_API_KEY` env var
+- MCP server: `openrouter` adapter option in `run_flow` tool and `SLANG_ADAPTER` env var
+- README: CLI vs Zero-Setup feature comparison table
 
 ## [0.3.0]
 
