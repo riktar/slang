@@ -122,3 +122,80 @@ describe("CLI: .env loading", () => {
     assert.ok(out.includes("FLOW CONVERGED"));
   });
 });
+
+// ─── --deliverers flag ───
+
+describe("CLI: --deliverers flag", () => {
+  const tmpDir = join(import.meta.dirname, "../.test-deliverers-" + process.pid);
+
+  beforeEach(() => {
+    mkdirSync(tmpDir, { recursive: true });
+    writeFileSync(
+      join(tmpDir, "flow.slang"),
+      `flow "test" {
+  agent A {
+    stake greet("hello") -> @out
+    commit
+  }
+  deliver: my_handler(path: "out.txt")
+  converge when: all_committed
+}`,
+    );
+  });
+
+  afterEach(() => {
+    if (existsSync(tmpDir)) rmSync(tmpDir, { recursive: true });
+  });
+
+  it("loads deliverers from a JS file and runs them", () => {
+    writeFileSync(
+      join(tmpDir, "deliverers.js"),
+      `import { writeFileSync } from "node:fs";
+export default {
+  my_handler(output, args) {
+    writeFileSync(args.path, "delivered: " + String(output));
+  },
+};`,
+    );
+    const out = run(["run", "flow.slang", "--adapter", "echo", "--deliverers", "deliverers.js"], tmpDir);
+    assert.ok(out.includes("FLOW CONVERGED") || out.includes("converged"));
+    assert.ok(existsSync(join(tmpDir, "out.txt")));
+    assert.ok(readFileSync(join(tmpDir, "out.txt"), "utf-8").includes("delivered:"));
+  });
+
+  it("logs deliverers loaded message", () => {
+    writeFileSync(
+      join(tmpDir, "deliverers.js"),
+      `export default { my_handler() {} };`,
+    );
+    const out = run(["run", "flow.slang", "--adapter", "echo", "--deliverers", "deliverers.js"], tmpDir);
+    assert.ok(out.includes("Deliverers loaded") || out.includes("my_handler"));
+  });
+
+  it("errors on invalid deliverers file", () => {
+    writeFileSync(join(tmpDir, "bad.js"), `export default 42;`);
+    try {
+      run(["run", "flow.slang", "--adapter", "echo", "--deliverers", "bad.js"], tmpDir);
+      assert.fail("Expected error");
+    } catch (err: any) {
+      assert.ok(err.status !== 0);
+    }
+  });
+
+  it("runs fine with no deliver statements even if --deliverers is passed", () => {
+    writeFileSync(
+      join(tmpDir, "simple.slang"),
+      `flow "test" {
+  agent A {
+    stake greet("hello") -> @out
+    commit
+  }
+  converge when: all_committed
+}`,
+    );
+    writeFileSync(join(tmpDir, "deliverers.js"), `export default { my_handler() {} };`);
+    const out = run(["run", "simple.slang", "--adapter", "echo", "--deliverers", "deliverers.js"], tmpDir);
+    assert.ok(out.includes("FLOW CONVERGED") || out.includes("converged"));
+  });
+});
+

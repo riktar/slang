@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Handlers provided via `RuntimeOptions.deliverers` (same pattern as `tools`)
   - Only runs on successful convergence — not on budget_exceeded, escalated, or deadlock
 - **`onConverge` runtime hook** — `RuntimeOptions.onConverge` callback fires after all deliver handlers complete
+- **`--deliverers` CLI flag** — pass a JS/TS file with deliver handlers via `slang run ... --deliverers deliverers.js`
 - New AST node types: `LetOp`, `SetOp`, `RepeatBlock`, `ElseBlock`, `DeliverStmt`
 - New tokens: `Let`, `Set`, `Else`, `Otherwise`, `Repeat`, `Until`, `Eq`, `Deliver`
 - New runtime types: `DeliverHandler`, `RuntimeEvent` deliver/on_converge events

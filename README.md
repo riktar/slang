@@ -257,6 +257,7 @@ slang playground             # Launch the web playground
 | `--model` | Override model (e.g. `gpt-4o`) |
 | `--base-url` | Custom endpoint (Ollama, local models) |
 | `--tools` | JS file with tool handlers (see [`examples/tools.js`](examples/tools.js)) |
+| `--deliverers` | JS file with deliver handlers (post-convergence side effects) |
 | `--port` | Playground port (default `5174`) |
 
 ### `.env` support
@@ -393,6 +394,26 @@ const state = await runFlow(source, {
 ```
 
 See [`examples/finalizer.slang`](examples/finalizer.slang) for the Finalizer pattern.
+
+CLI usage:
+
+```bash
+slang run report.slang --adapter openrouter --deliverers deliverers.js
+```
+
+The `deliverers.js` file follows the same pattern as `tools.js` — default-export an object where each key is a handler name and each value is `async (output, args) => void`:
+
+```js
+// deliverers.js
+export default {
+  async save_file(output, args) {
+    await writeFile(args.path, String(output))
+  },
+  async webhook(output, args) {
+    await fetch(args.url, { method: 'POST', body: JSON.stringify(output) })
+  },
+}
+```
 
 ### Static Analysis & Error Handling
 

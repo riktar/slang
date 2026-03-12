@@ -660,6 +660,14 @@ slang run research.slang --adapter openrouter --tools tools.js
 
 The file must default-export (or module-export) an object where each key is a tool name and each value is an async function `(args: Record<string, unknown>) => Promise<string>`. See `examples/tools.js` for a ready-to-use template.
 
+For `deliver:` handlers, use `--deliverers` instead:
+
+```bash
+slang run report.slang --adapter openrouter --deliverers deliverers.js
+```
+
+The `deliverers.js` file must default-export an object where each key is a handler name matching a `deliver:` statement and each value is `async (output: unknown, args: Record<string, unknown>) => void`. See §2.9 for details.
+
 #### How It Works
 
 1. The runtime checks each agent's `tools:` declaration against the provided `RuntimeOptions.tools` record

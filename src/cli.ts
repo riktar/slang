@@ -7,7 +7,7 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 import { createServer } from "node:http";
 import { parse } from "./parser.js";
 import { resolveDeps, detectDeadlocks } from "./resolver.js";
-import { runFlow, type RuntimeEvent, type FlowState, type ToolHandler } from "./runtime.js";
+import { runFlow, type RuntimeEvent, type FlowState, type ToolHandler, type DeliverHandler } from "./runtime.js";
 import {
   createOpenAIAdapter,
   createAnthropicAdapter,
@@ -35,6 +35,7 @@ function printUsage(): void {
     --model <model-name>                Model override
     --api-key <key>                     API key (or set via .env file)
     --tools <file.js|file.ts>           JS/TS file exporting tool handlers (default export)
+    --deliverers <file.js|file.ts>      JS/TS file exporting deliver handlers (default export)
     --port <number>                     Playground server port (default: 5174)
 
   ENVIRONMENT:
@@ -46,6 +47,7 @@ function printUsage(): void {
     slang init my-project
     slang run hello.slang --adapter openrouter
     slang run research.slang --adapter openai --tools tools.js
+    slang run report.slang --adapter openrouter --deliverers deliverers.js
     slang prompt > system_prompt.txt
     slang playground
   `);
@@ -212,6 +214,24 @@ async function loadTools(toolsPath: string): Promise<Record<string, ToolHandler>
   }
 }
 
+async function loadDeliverers(deliverersPath: string): Promise<Record<string, DeliverHandler>> {
+  const absolute = resolve(deliverersPath);
+  const fileUrl = pathToFileURL(absolute).href;
+  try {
+    const mod = await import(fileUrl);
+    const deliverers = mod.default ?? mod;
+    if (typeof deliverers !== "object" || deliverers === null) {
+      console.error(`Error: deliverers file must export an object { name: handler }`);
+      process.exit(1);
+    }
+    return deliverers as Record<string, DeliverHandler>;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`Error: cannot load deliverers file '${deliverersPath}': ${msg}`);
+    process.exit(1);
+  }
+}
+
 // ─── .env Loader ───
 
 function loadEnv(): void {
@@ -367,13 +387,17 @@ async function cmdRun(args: Record<string, string>): Promise<void> {
   const source = readSlangFile(file);
   const adapter = getAdapter(args);
   const tools = args["tools"] ? await loadTools(args["tools"]) : undefined;
+  const deliverers = args["deliverers"] ? await loadDeliverers(args["deliverers"]) : undefined;
 
   console.log(`${COLORS.bold}SLANG v0.6.0${COLORS.reset} — running ${file} with ${(adapter as any).name ?? args["adapter"] ?? "echo"}`);
   if (tools) {
     console.log(`${COLORS.dim}Tools loaded: ${Object.keys(tools).join(", ")}${COLORS.reset}`);
   }
+  if (deliverers) {
+    console.log(`${COLORS.dim}Deliverers loaded: ${Object.keys(deliverers).join(", ")}${COLORS.reset}`);
+  }
 
-  const state = await runFlow(source, { adapter, tools, onEvent: eventHandler });
+  const state = await runFlow(source, { adapter, tools, deliverers, onEvent: eventHandler });
   printFlowResult(state);
 }
 
