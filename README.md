@@ -175,12 +175,11 @@ LangChain, CrewAI, AutoGen - they're SDKs. Python/TypeScript libraries. Classes,
 ```
 flow "hybrid-analysis" {
   agent Researcher {
-    model: "gpt-4o"              -- routed to OpenAI
     tools: [web_search]
     stake gather(topic: "quantum computing") -> @Analyst
+    commit
   }
   agent Analyst {
-    model: "claude-sonnet"       -- routed to Anthropic
     await data <- @Researcher
     stake analyze(data) -> @out
     commit
@@ -195,7 +194,7 @@ You get 300+ models via [OpenRouter](https://openrouter.ai) with one API key. Di
 
 Read this flow out loud:
 
-> *"The Researcher stakes gather on the competitors and sends it to the Analyst. The Analyst awaits the data, analyzes it, and sends to the Critic. The Critic challenges the analysis and sends feedback back. If the confidence is high enough, commit. Otherwise, escalate to a Human."*
+> *"The Researcher stakes gather on "quantum computer" topic and sends it to the Analyst. The Analyst awaits the data, analyzes it, and sends the output to the user. The flow stop when the Researcher and the Analyst have committed their job"*
 
 No diagrams, no comments, no docs needed. The `.slang` file is the documentation.
 
