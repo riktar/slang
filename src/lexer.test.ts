@@ -250,4 +250,56 @@ describe("Lexer", () => {
     assert.equal(tokens[3]!.type, TokenType.Ident);
     assert.equal(tokens[3]!.value, "approved");
   });
+
+  // ─── v0.6 Keywords ───
+
+  it("tokenizes let keyword and = operator", () => {
+    const tokens = tokenize('let summary = "hello"');
+    assert.equal(tokens[0]!.type, TokenType.Let);
+    assert.equal(tokens[1]!.type, TokenType.Ident);
+    assert.equal(tokens[1]!.value, "summary");
+    assert.equal(tokens[2]!.type, TokenType.Eq);
+    assert.equal(tokens[3]!.type, TokenType.String);
+    assert.equal(tokens[3]!.value, "hello");
+  });
+
+  it("tokenizes set keyword", () => {
+    const tokens = tokenize('set total = 42');
+    assert.equal(tokens[0]!.type, TokenType.Set);
+    assert.equal(tokens[1]!.type, TokenType.Ident);
+    assert.equal(tokens[2]!.type, TokenType.Eq);
+    assert.equal(tokens[3]!.type, TokenType.Number);
+  });
+
+  it("tokenizes else keyword", () => {
+    const tokens = tokenize("else {");
+    assert.equal(tokens[0]!.type, TokenType.Else);
+    assert.equal(tokens[1]!.type, TokenType.LBrace);
+  });
+
+  it("tokenizes otherwise keyword", () => {
+    const tokens = tokenize("otherwise {");
+    assert.equal(tokens[0]!.type, TokenType.Otherwise);
+    assert.equal(tokens[1]!.type, TokenType.LBrace);
+  });
+
+  it("tokenizes repeat and until keywords", () => {
+    const tokens = tokenize("repeat until done {");
+    assert.equal(tokens[0]!.type, TokenType.Repeat);
+    assert.equal(tokens[1]!.type, TokenType.Until);
+    assert.equal(tokens[2]!.type, TokenType.Ident);
+    assert.equal(tokens[3]!.type, TokenType.LBrace);
+  });
+
+  it("distinguishes = from ==", () => {
+    const tokens = tokenize("x = 1 == 2");
+    assert.equal(tokens[1]!.type, TokenType.Eq);
+    assert.equal(tokens[3]!.type, TokenType.EqEq);
+  });
+
+  it("tokenizes deliver keyword", () => {
+    const tokens = tokenize("deliver: save_file()");
+    assert.equal(tokens[0]!.type, TokenType.Deliver);
+    assert.equal(tokens[1]!.type, TokenType.Colon);
+  });
 });

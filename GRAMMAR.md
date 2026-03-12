@@ -1,7 +1,7 @@
 # SLANG Language Playbook
 
 > Complete syntax reference, formal grammar, and annotated examples for  
-> **SLANG v0.5.0** — Super Language for Agent Negotiation & Governance.
+> **SLANG v0.6.0** — Super Language for Agent Negotiation & Governance.
 
 ---
 
@@ -17,12 +17,15 @@
    - [commit](#53-commit--accept--terminate)
    - [escalate](#54-escalate--reject--delegate)
 6. [Conditionals](#6-conditionals)
-7. [Flow Constraints](#7-flow-constraints)
-8. [Composition](#8-composition)
-9. [Expressions & Data Model](#9-expressions--data-model)
-10. [Execution Model](#10-execution-model)
-11. [Formal Grammar (EBNF)](#11-formal-grammar-ebnf)
-12. [Reserved Words](#12-reserved-words)
+7. [Variables & State](#7-variables--state)
+8. [Loops](#8-loops)
+9. [Flow Constraints](#9-flow-constraints)
+10. [Deliver](#10-deliver--post-convergence-side-effects)
+11. [Composition](#11-composition)
+12. [Expressions & Data Model](#12-expressions--data-model)
+13. [Execution Model](#13-execution-model)
+14. [Formal Grammar (EBNF)](#14-formal-grammar-ebnf)
+15. [Reserved Words](#15-reserved-words)
 
 ---
 
@@ -36,6 +39,9 @@ flow "name" {
     tools: [tool1, tool2]         -- optional: available tools
     retry: 3                      -- optional: max retry attempts on failure
 
+    let var = value               -- declare local variable
+    set var = value               -- update local variable
+
     stake func(args) -> @Target   -- produce & send
       output: { key: "type" }     -- optional: structured output contract
     await binding <- @Source      -- wait for input
@@ -44,11 +50,18 @@ flow "name" {
 
     when expr {                   -- conditional block
       ...operations...
+    } else {                      -- optional else branch
+      ...operations...
+    }
+
+    repeat until expr {           -- loop until condition is true
+      ...operations...
     }
   }
 
   converge when: condition        -- when does the flow end?
   budget: tokens(N), rounds(N)   -- hard resource limits
+  deliver: handler(args)         -- post-convergence side effect
 }
 ```
 
@@ -355,11 +368,103 @@ when feedback.rejected {
 ```
 
 `when` blocks are not exclusive — both can execute if both conditions are true.
-Use mutually exclusive conditions (e.g. `.approved` / `.rejected`) for if/else semantics.
+Use mutually exclusive conditions (e.g. `.approved` / `.rejected`) for if/else semantics, or use `else` / `otherwise`.
+
+### `else` / `otherwise`
+
+A `when` block can have an optional `else` (or `otherwise`) branch:
+
+```slang
+when feedback.approved {
+  commit feedback
+} else {
+  stake revise(draft, feedback.notes) -> @Reviewer
+}
+```
+
+`otherwise` is an alias for `else`:
+
+```slang
+when data.valid {
+  commit data
+} otherwise {
+  escalate @Human reason: "invalid data"
+}
+```
+
+The else block executes when the `when` condition is false. Without `else`, a false condition simply skips the block (backward compatible with v0.5).
 
 ---
 
-## 7. Flow Constraints
+## 7. Variables & State
+
+### `let` — Declare a Variable
+
+```slang
+let name = expression
+```
+
+Declares a new agent-local variable. Variables are scoped to the agent that declares them and persist across rounds.
+
+```slang
+agent Tracker {
+  let summary = "initial"
+  let attempts = 0
+  let ready = false
+  stake process(summary) -> @out
+  commit
+}
+```
+
+### `set` — Update a Variable
+
+```slang
+set name = expression
+```
+
+Updates the value of a previously declared variable.
+
+```slang
+let msg = "hello"
+set msg = "updated"
+set msg = result.text
+```
+
+**Resolution order:** Variables are checked before `await` bindings during expression evaluation.
+
+**Prompt injection:** Variables are included in the agent's LLM system prompt as `Agent variables: { name: value }`.
+
+---
+
+## 8. Loops
+
+### `repeat until` — Explicit Iteration
+
+```slang
+repeat until condition {
+  ...operations...
+}
+```
+
+Executes the body repeatedly until `condition` evaluates to true.
+
+```slang
+agent Worker {
+  let done = false
+  repeat until done {
+    stake process(data) -> @Checker
+    await result <- @Checker
+    set done = result.approved
+  }
+  commit
+}
+```
+
+The runtime enforces a safety limit of **100 iterations** to prevent infinite loops.
+
+---
+
+## 9. Flow Constraints
 
 ### `converge`
 
@@ -393,7 +498,52 @@ If no budget is specified, the runtime defaults to `rounds(10)`.
 
 ---
 
-## 8. Composition
+## 10. Deliver — Post-Convergence Side Effects
+
+A `deliver` statement declares a handler that runs **after** the flow successfully converges. Multiple `deliver` statements are executed in declaration order.
+
+```slang
+deliver: handler_name(arg1: "value", arg2: "value")
+```
+
+### Syntax
+
+```
+deliver: <funcCall>
+```
+
+Where `funcCall` is the same syntax as a `stake` function call: `name(args)`.
+
+### Example
+
+```slang
+flow "report" {
+  agent Writer {
+    stake write(topic: "AI Safety") -> @out
+    commit
+  }
+
+  deliver: save_file(path: "report.md", format: "markdown")
+  deliver: webhook(url: "https://hooks.example.com/done")
+
+  converge when: all_committed
+}
+```
+
+### Behavior
+
+- Deliver handlers are provided at runtime via `RuntimeOptions.deliverers` (same pattern as `tools`)
+- Each handler receives (1) the last flow output and (2) the named arguments
+- If a handler name has no matching entry in `deliverers`, it is silently skipped
+- **Only** runs on successful convergence — not on `budget_exceeded`, `escalated`, or `deadlock`
+
+### `onConverge` Hook
+
+In addition to `deliver`, the runtime supports an `onConverge` callback (set via `RuntimeOptions.onConverge`) that fires after all deliver handlers complete. This is a programmatic hook, not part of the SLANG syntax.
+
+---
+
+## 11. Composition
 
 ### `import`
 
@@ -421,7 +571,7 @@ flow "full-report" {
 
 ---
 
-## 9. Expressions & Data Model
+## 12. Expressions & Data Model
 
 ### Value Types
 
@@ -463,7 +613,7 @@ stake validate(data, against: ["rule1", "rule2"])   -- mixed
 
 ---
 
-## 10. Execution Model
+## 13. Execution Model
 
 ### Dependency Resolution
 
@@ -582,7 +732,7 @@ Only tools declared in the agent's `tools:` metadata **and** provided in the run
 
 ---
 
-## 11. Formal Grammar (EBNF)
+## 14. Formal Grammar (EBNF)
 
 ```ebnf
 (* Whitespace and comments *)
@@ -606,10 +756,13 @@ program         = { flow_decl } ;
 
 flow_decl       = "flow" STRING "{" flow_body "}" ;
 
-flow_body       = { import_stmt | agent_decl | converge_stmt | budget_stmt } ;
+flow_body       = { import_stmt | agent_decl | converge_stmt | budget_stmt | deliver_stmt } ;
 
 (* Import *)
 import_stmt     = "import" STRING "as" IDENT ;
+
+(* Deliver *)
+deliver_stmt    = "deliver" ":" func_call ;
 
 (* Agent *)
 agent_decl      = "agent" IDENT "{" agent_body "}" ;
@@ -624,7 +777,8 @@ tools_decl      = "tools" ":" list_literal ;
 retry_decl      = "retry" ":" NUMBER ;
 
 (* Operations *)
-operation       = stake_op | await_op | commit_op | escalate_op | when_block ;
+operation       = stake_op | await_op | commit_op | escalate_op | when_block
+                | let_op | set_op | repeat_block ;
 
 stake_op        = "stake" func_call "->" recipient_list [ condition ] [ output_schema ] ;
 
@@ -637,7 +791,15 @@ commit_op       = "commit" [ expression ] [ condition ] ;
 
 escalate_op     = "escalate" AGENT_REF [ "reason" ":" STRING ] [ condition ] ;
 
-when_block      = "when" expression "{" { operation } "}" ;
+when_block      = "when" expression "{" { operation } "}" [ else_block ] ;
+
+else_block      = ( "else" | "otherwise" ) "{" { operation } "}" ;
+
+let_op          = "let" IDENT "=" expression ;
+
+set_op          = "set" IDENT "=" expression ;
+
+repeat_block    = "repeat" "until" expression "{" { operation } "}" ;
 
 (* Function calls *)
 func_call       = IDENT "(" [ arg_list ] ")" ;
@@ -689,12 +851,13 @@ list_literal    = "[" [ expression { "," expression } ] "]" ;
 
 ---
 
-## 12. Reserved Words
+## 15. Reserved Words
 
 ```
 flow, agent, stake, await, commit, escalate, import, as,
-when, if, converge, budget, role, model, tools,
-tokens, rounds, time, count, reason, retry, output,
+when, if, else, otherwise, converge, budget, role, model, tools,
+tokens, rounds, time, count, reason, retry, output, deliver,
+let, set, repeat, until,
 true, false,
 @out, @all, @any, @Human
 ```

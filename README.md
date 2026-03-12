@@ -47,7 +47,7 @@ Everything else follows from these:
 | `await` | Block until another agent sends you data |
 | `commit` | Accept the result and stop |
 
-Every multi-agent workflow (pipelines, DAGs, loops, reviews, escalations) is just these three things combined. An LLM picks it up in 30 seconds. Your PM reads it no problem.
+Plus control flow: `when`/`else` conditionals, `let`/`set` variables, `repeat until` loops.
 
 ---
 
@@ -93,7 +93,10 @@ Checkpoint and resume. Deadlock detection. Structured output. Everything you nee
 |---------|:---:|:---:|
 | Parse & execute flows | ✅ | ✅ |
 | All primitives (`stake`, `await`, `commit`, `escalate`) | ✅ | ✅ |
-| Conditionals (`when` / `if`) | ✅ | ✅ |
+| Conditionals (`when` / `if` / `else`) | ✅ | ✅ |
+| Variables (`let` / `set`) | ✅ | ✅ |
+| Loops (`repeat until`) | ✅ | ✅ |
+| `deliver:` post-convergence hooks | ❌ | ✅ real handlers |
 | `model:` multi-provider routing | ❌ single LLM | ✅ 300+ models |
 | `tools:` functional execution | ❌ simulated | ✅ real handlers |
 | Parallel agents | ❌ sequential | ✅ `Promise.all` |
@@ -356,6 +359,41 @@ const saved = deserializeFlowState(await readFile('checkpoint.json', 'utf8'))
 const resumed = await runFlow(source, { adapter, resumeFrom: saved })
 ```
 
+### Deliver & onConverge
+
+Execute side effects after convergence using `deliver:` in the `.slang` file and `deliverers` in runtime options:
+
+```slang
+flow "report" {
+  agent Writer {
+    stake write(topic: "AI") -> @out
+    commit
+  }
+  deliver: save_file(path: "report.md")
+  deliver: webhook(url: "https://hooks.example.com/done")
+  converge when: all_committed
+}
+```
+
+```typescript
+const state = await runFlow(source, {
+  adapter,
+  deliverers: {
+    save_file: async (output, args) => {
+      await writeFile(args.path as string, String(output))
+    },
+    webhook: async (output, args) => {
+      await fetch(args.url as string, { method: 'POST', body: JSON.stringify(output) })
+    },
+  },
+  onConverge: async (finalState) => {
+    console.log(`Converged in ${finalState.round} rounds`)
+  },
+})
+```
+
+See [`examples/finalizer.slang`](examples/finalizer.slang) for the Finalizer pattern.
+
 ### Static Analysis & Error Handling
 
 ```typescript
@@ -436,6 +474,8 @@ Check out the [`examples/`](examples/) folder for runnable flows covering every 
 | [`broadcast.slang`](examples/broadcast.slang) | Parallel broadcast | `@all` broadcast, `*` wildcard source, coordinator pattern |
 | [`code-review.slang`](examples/code-review.slang) | Code review | `tools: [code_exec]`, structured `output` on multiple stakes, review loop |
 | [`composition.slang`](examples/composition.slang) | Flow composition | `import ... as`, `count:` on await, orchestration |
+| [`iterative.slang`](examples/iterative.slang) | Iterative review | `let`/`set` variables, `when`/`else`, `repeat until` |
+| [`finalizer.slang`](examples/finalizer.slang) | Finalizer pattern | `deliver:` post-convergence, side effects, webhooks |
 | [`tools.js`](examples/tools.js) | Tool handlers | `web_search` and `code_exec` stubs for `--tools` flag |
 
 ```bash

@@ -30,7 +30,7 @@ export interface FlowDecl extends BaseNode {
   body: FlowBodyItem[];
 }
 
-export type FlowBodyItem = ImportStmt | AgentDecl | ConvergeStmt | BudgetStmt;
+export type FlowBodyItem = ImportStmt | AgentDecl | ConvergeStmt | BudgetStmt | DeliverStmt;
 
 // ─── Import ───
 
@@ -58,7 +58,7 @@ export interface AgentMeta {
 
 // ─── Operations ───
 
-export type Operation = StakeOp | AwaitOp | CommitOp | EscalateOp | WhenBlock;
+export type Operation = StakeOp | AwaitOp | CommitOp | EscalateOp | WhenBlock | LetOp | SetOp | RepeatBlock;
 
 export interface StakeOp extends BaseNode {
   type: "StakeOp";
@@ -101,6 +101,30 @@ export interface WhenBlock extends BaseNode {
   type: "WhenBlock";
   condition: Expr;
   body: Operation[];
+  elseBlock?: ElseBlock;
+}
+
+export interface ElseBlock extends BaseNode {
+  type: "ElseBlock";
+  body: Operation[];
+}
+
+export interface LetOp extends BaseNode {
+  type: "LetOp";
+  name: string;
+  value: Expr;
+}
+
+export interface SetOp extends BaseNode {
+  type: "SetOp";
+  name: string;
+  value: Expr;
+}
+
+export interface RepeatBlock extends BaseNode {
+  type: "RepeatBlock";
+  condition: Expr;
+  body: Operation[];
 }
 
 // ─── Function Call ───
@@ -141,6 +165,13 @@ export interface BudgetStmt extends BaseNode {
 export interface BudgetItem {
   kind: "tokens" | "rounds" | "time";
   value: Expr;
+}
+
+// ─── Deliver ───
+
+export interface DeliverStmt extends BaseNode {
+  type: "DeliverStmt";
+  call: FuncCall;
 }
 
 // ─── Expressions ───

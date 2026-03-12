@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { runFlow, type FlowState, type RuntimeEvent, serializeFlowState, deserializeFlowState, type ToolHandler } from "./runtime.js";
+import { runFlow, type FlowState, type RuntimeEvent, serializeFlowState, deserializeFlowState, type ToolHandler, type DeliverHandler } from "./runtime.js";
 import { createEchoAdapter, createRouterAdapter, type LLMAdapter, type LLMMessage, type LLMResponse } from "./adapter.js";
 
 // ─── Helpers ───
@@ -1063,6 +1063,325 @@ describe("Runtime", () => {
       const toolResultEvent = events.find((e) => e.type === "tool_result");
       assert.ok(toolResultEvent);
       assert.equal((toolResultEvent as any).result, "4");
+    });
+  });
+
+  // ─── v0.6: Let / Set ───
+
+  describe("Let / Set variables", () => {
+    it("stores and uses local variables with let", async () => {
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            let greeting = "hello world"
+            commit greeting
+          }
+          converge when: all_committed
+        }
+      `, { adapter: createEchoAdapter() });
+
+      assert.equal(state.status, "converged");
+      assert.ok(state.agents.get("A")!.committed);
+      assert.equal(state.agents.get("A")!.output, "hello world");
+    });
+
+    it("updates variables with set", async () => {
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            let total = 0
+            set total = 42
+            commit total
+          }
+          converge when: all_committed
+        }
+      `, { adapter: createEchoAdapter() });
+
+      assert.equal(state.status, "converged");
+      assert.equal(state.agents.get("A")!.output, 42);
+    });
+
+    it("variables are accessible in conditions", async () => {
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            let ready = true
+            commit if ready
+          }
+          converge when: all_committed
+        }
+      `, { adapter: createEchoAdapter() });
+
+      assert.equal(state.status, "converged");
+      assert.ok(state.agents.get("A")!.committed);
+    });
+
+    it("variables are agent-local", async () => {
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            let msg = "from A"
+            stake send(msg) -> @out
+            commit
+          }
+          agent B {
+            let msg = "from B"
+            stake send(msg) -> @out
+            commit
+          }
+          converge when: all_committed
+        }
+      `, { adapter: createEchoAdapter() });
+
+      assert.equal(state.status, "converged");
+      assert.equal(state.outputs.length, 2);
+    });
+  });
+
+  // ─── v0.6: Else / Otherwise ───
+
+  describe("Else / Otherwise", () => {
+    it("executes else block when when-condition is false", async () => {
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            let done = false
+            when done {
+              commit "was done"
+            } else {
+              commit "not done"
+            }
+          }
+          converge when: all_committed
+        }
+      `, { adapter: createEchoAdapter() });
+
+      assert.equal(state.status, "converged");
+      assert.equal(state.agents.get("A")!.output, "not done");
+    });
+
+    it("executes when body when condition is true (not else)", async () => {
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            let done = true
+            when done {
+              commit "was done"
+            } else {
+              commit "not done"
+            }
+          }
+          converge when: all_committed
+        }
+      `, { adapter: createEchoAdapter() });
+
+      assert.equal(state.status, "converged");
+      assert.equal(state.agents.get("A")!.output, "was done");
+    });
+
+    it("otherwise keyword works same as else", async () => {
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            let ok = false
+            when ok {
+              commit "ok"
+            } otherwise {
+              commit "not ok"
+            }
+          }
+          converge when: all_committed
+        }
+      `, { adapter: createEchoAdapter() });
+
+      assert.equal(state.status, "converged");
+      assert.equal(state.agents.get("A")!.output, "not ok");
+    });
+  });
+
+  // ─── v0.6: Repeat / Until ───
+
+  describe("Repeat / Until", () => {
+    it("repeats until condition is true", async () => {
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            let i = 0
+            repeat until i >= 3 {
+              set i = round
+            }
+            commit i
+          }
+          converge when: all_committed
+          budget: rounds(10)
+        }
+      `, { adapter: createEchoAdapter() });
+
+      assert.equal(state.status, "converged");
+      assert.ok(state.agents.get("A")!.committed);
+    });
+
+    it("does not execute body when condition is already true", async () => {
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            let done = true
+            repeat until done {
+              escalate @Human reason: "should not reach"
+            }
+            commit
+          }
+          converge when: all_committed
+        }
+      `, { adapter: createEchoAdapter() });
+
+      assert.equal(state.status, "converged");
+      assert.ok(state.agents.get("A")!.committed);
+      assert.equal(state.agents.get("A")!.escalatedTo, undefined);
+    });
+  });
+
+  // ─── v0.6: Deliver & onConverge ───
+
+  describe("Deliver & onConverge", () => {
+    it("calls deliver handler after convergence", async () => {
+      const delivered: { output: unknown; args: Record<string, unknown> }[] = [];
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            stake greet("hello") -> @out
+            commit
+          }
+          deliver: save_file(path: "out.txt")
+          converge when: all_committed
+        }
+      `, {
+        adapter: createEchoAdapter(),
+        deliverers: {
+          save_file: async (output, args) => { delivered.push({ output, args }); },
+        },
+      });
+
+      assert.equal(state.status, "converged");
+      assert.equal(delivered.length, 1);
+      assert.equal(delivered[0]!.args.path, "out.txt");
+    });
+
+    it("calls onConverge hook after convergence", async () => {
+      let convergedState: FlowState | undefined;
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            stake greet("hello") -> @out
+            commit
+          }
+          converge when: all_committed
+        }
+      `, {
+        adapter: createEchoAdapter(),
+        onConverge: async (s) => { convergedState = s; },
+      });
+
+      assert.equal(state.status, "converged");
+      assert.ok(convergedState);
+      assert.equal(convergedState!.status, "converged");
+    });
+
+    it("does not call deliver or onConverge when budget exceeded", async () => {
+      let onConvergeCalled = false;
+      const delivered: unknown[] = [];
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            stake step() -> @B
+          }
+          agent B {
+            await data <- @A
+            stake reply() -> @A
+          }
+          deliver: save_file()
+          converge when: all_committed
+          budget: rounds(1)
+        }
+      `, {
+        adapter: createEchoAdapter(),
+        deliverers: { save_file: async (o) => { delivered.push(o); } },
+        onConverge: async () => { onConvergeCalled = true; },
+      });
+
+      assert.equal(state.status, "budget_exceeded");
+      assert.equal(delivered.length, 0);
+      assert.equal(onConvergeCalled, false);
+    });
+
+    it("calls multiple deliver handlers in order", async () => {
+      const order: string[] = [];
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            stake greet("hello") -> @out
+            commit
+          }
+          deliver: first_handler()
+          deliver: second_handler()
+          converge when: all_committed
+        }
+      `, {
+        adapter: createEchoAdapter(),
+        deliverers: {
+          first_handler: async () => { order.push("first"); },
+          second_handler: async () => { order.push("second"); },
+        },
+      });
+
+      assert.equal(state.status, "converged");
+      assert.deepEqual(order, ["first", "second"]);
+    });
+
+    it("emits deliver and on_converge events", async () => {
+      const events: RuntimeEvent[] = [];
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            stake greet("hello") -> @out
+            commit
+          }
+          deliver: save_file(path: "out.txt")
+          converge when: all_committed
+        }
+      `, {
+        adapter: createEchoAdapter(),
+        deliverers: { save_file: async () => {} },
+        onConverge: async () => {},
+        onEvent: collectEvents(events),
+      });
+
+      assert.equal(state.status, "converged");
+      const deliverEvents = events.filter(e => e.type === "deliver");
+      assert.equal(deliverEvents.length, 1);
+      const onConvergeEvents = events.filter(e => e.type === "on_converge");
+      assert.equal(onConvergeEvents.length, 1);
+    });
+
+    it("skips deliver handlers not present in deliverers map", async () => {
+      const delivered: string[] = [];
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            stake greet("hello") -> @out
+            commit
+          }
+          deliver: missing_handler()
+          deliver: present_handler()
+          converge when: all_committed
+        }
+      `, {
+        adapter: createEchoAdapter(),
+        deliverers: { present_handler: async () => { delivered.push("present"); } },
+      });
+
+      assert.equal(state.status, "converged");
+      assert.deepEqual(delivered, ["present"]);
     });
   });
 });

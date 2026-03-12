@@ -1,6 +1,6 @@
 # SLANG — Super Language for Agent Negotiation & Governance
 
-## Specification v0.5.0
+## Specification v0.6.0
 
 ---
 
@@ -177,7 +177,94 @@ when feedback.rejected {
 }
 ```
 
-### 2.5 Flow-Level Constraints
+#### `else` / `otherwise`
+
+A `when` block can have an optional `else` (or `otherwise`) branch for mutually exclusive conditions:
+
+```slang
+when feedback.approved {
+  commit feedback
+} else {
+  stake revise(draft, feedback.notes) -> @Reviewer
+}
+```
+
+`otherwise` is an alias for `else`:
+
+```slang
+when data.valid {
+  commit data
+} otherwise {
+  escalate @Human reason: "invalid data"
+}
+```
+
+The else block executes when the `when` condition is false. Without `else`, a false condition simply skips the block (backward compatible).
+
+### 2.5 Variables & State
+
+#### `let` — Declare a Variable
+
+```slang
+let name = expression
+```
+
+Declares a new agent-local variable. Variables are scoped to the agent that declares them and persist across rounds.
+
+```slang
+agent Tracker {
+  let summary = "initial"
+  let attempts = 0
+  let ready = false
+  ...
+}
+```
+
+#### `set` — Update a Variable
+
+```slang
+set name = expression
+```
+
+Updates an existing variable's value.
+
+```slang
+set attempts = 3
+set summary = result.text
+set ready = true
+```
+
+Variables are resolved before bindings (from `await`) in expression evaluation. This means a variable and a binding with the same name will resolve to the variable value.
+
+Variables are included in the agent's LLM prompt context as `Agent variables: { name: value, ... }`.
+
+### 2.6 Loops
+
+#### `repeat until` — Explicit Iteration
+
+```slang
+repeat until condition {
+  ...operations...
+}
+```
+
+Executes the body repeatedly until `condition` evaluates to true.
+
+```slang
+agent Worker {
+  let done = false
+  repeat until done {
+    stake process(data) -> @Checker
+    await result <- @Checker
+    set done = result.approved
+  }
+  commit
+}
+```
+
+A safety limit of 100 iterations prevents infinite loops at runtime.
+
+### 2.7 Flow-Level Constraints
 
 #### `converge`
 
@@ -202,7 +289,7 @@ budget: time(60s)
 
 When budget is exhausted, the flow terminates with a `budget_exceeded` status and returns whatever partial results exist.
 
-### 2.6 Composition
+### 2.8 Composition
 
 #### `import`
 
@@ -225,6 +312,109 @@ flow "full-report" {
   }
 }
 ```
+
+### 2.9 Deliver — Post-Convergence Side Effects
+
+#### `deliver`
+
+A `deliver` statement declares a handler to execute **after** the flow converges. Deliver statements are flow-level (siblings of `agent`, `converge`, `budget`) and are executed in declaration order.
+
+```slang
+deliver: handler_name(args)
+```
+
+Common use cases:
+- Save flow output to a file
+- Send a webhook notification
+- Log results to an external system
+- Trigger downstream pipelines
+
+```slang
+flow "report" {
+  agent Writer {
+    role: "Technical writer"
+    stake write(topic: "AI Safety") -> @out
+    commit
+  }
+
+  deliver: save_file(path: "report.md", format: "markdown")
+  deliver: webhook(url: "https://hooks.example.com/done")
+
+  converge when: all_committed
+}
+```
+
+Deliver handlers are provided at runtime via the `deliverers` option in `RuntimeOptions` (same pattern as `tools`):
+
+```typescript
+const state = await runFlow(source, {
+  adapter,
+  deliverers: {
+    save_file: async (output, args) => {
+      await writeFile(args.path as string, String(output));
+    },
+    webhook: async (output, args) => {
+      await fetch(args.url as string, {
+        method: "POST",
+        body: JSON.stringify(output),
+      });
+    },
+  },
+});
+```
+
+Each handler receives:
+1. `output` — the last flow output (from `stake -> @out`)
+2. `args` — the named arguments from the `deliver:` statement
+
+If a handler name in the `.slang` file has no matching entry in `deliverers`, it is silently skipped (backward compatible).
+
+Deliver statements are **not** executed when the flow terminates with `budget_exceeded`, `escalated`, or `deadlock` status — only on successful convergence.
+
+#### `onConverge` Runtime Hook
+
+The `onConverge` callback is a runtime-level hook invoked after all `deliver` handlers complete:
+
+```typescript
+const state = await runFlow(source, {
+  adapter,
+  onConverge: async (finalState) => {
+    console.log(`Flow converged in ${finalState.round} rounds`);
+  },
+});
+```
+
+This is useful for programmatic post-processing without needing a `deliver` statement in the `.slang` file.
+
+#### Finalizer Pattern
+
+The **Finalizer pattern** combines a dedicated agent for orchestration with `deliver` for side effects:
+
+```slang
+flow "report-with-delivery" {
+  agent Researcher {
+    role: "Web research specialist"
+    tools: [web_search]
+    stake gather(topic: "AI agent frameworks 2025") -> @Writer
+  }
+
+  agent Writer {
+    role: "Technical writer"
+    await data <- @Researcher
+    stake write(data, style: "executive summary") -> @out
+      output: { title: "string", body: "string" }
+    commit
+  }
+
+  deliver: save_file(path: "report.md", format: "markdown")
+  deliver: webhook(url: "https://hooks.example.com/reports")
+
+  converge when: committed_count >= 1
+  budget: rounds(3)
+}
+```
+
+See [`examples/finalizer.slang`](examples/finalizer.slang) for a complete runnable example.
 
 ---
 
@@ -512,8 +702,9 @@ A **round** is one full pass through all currently executable agents. The `budge
 
 ```
 flow, agent, stake, await, commit, escalate, import, as,
-when, if, converge, budget, role, model, tools,
-tokens, rounds, time, count, reason, retry, output,
+when, if, else, otherwise, converge, budget, role, model, tools,
+tokens, rounds, time, count, reason, retry, output, deliver,
+let, set, repeat, until,
 true, false,
 @out, @all, @any, @Human
 ```
@@ -619,8 +810,8 @@ The SLANG toolchain uses a structured error code system. All errors carry a code
 | P200 | Unexpected token |
 | P201 | Expected specific token |
 | P202 | Expected expression |
-| P203 | Expected operation (`stake`, `await`, `commit`, `escalate`, `when`) |
-| P204 | Expected flow body item (`import`, `agent`, `converge`, `budget`) |
+| P203 | Expected operation (`stake`, `await`, `commit`, `escalate`, `when`, `let`, `set`, `repeat`) |
+| P204 | Expected flow body item (`import`, `agent`, `converge`, `budget`, `deliver`) |
 | P205 | Expected budget kind (`tokens`, `rounds`, `time`) |
 | P206 | Expected agent name |
 | P207 | Expected flow name |

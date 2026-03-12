@@ -12,6 +12,18 @@ Agent metadata modifiers:
 - **retry: N** — if the agent's stake fails, retry up to N times before giving up
 - **output: { field: "type" }** — structured output contract on a stake; the response MUST include a JSON block with the declared fields
 
+Agent-level statements:
+- **let name = value** — declare a local variable (scoped to the agent, persists across rounds)
+- **set name = value** — update an existing variable's value
+
+Control flow:
+- **when expr { ... }** — conditional block, executes body if expression is truthy
+- **when expr { ... } else { ... }** — conditional with else branch (also: `otherwise` is an alias for `else`)
+- **repeat until expr { ... }** — loop: repeat the body until the expression is true (max 100 iterations)
+
+Flow-level statements:
+- **deliver: handler(args)** — declares a post-convergence side-effect handler (e.g., save files, send webhooks). In zero-setup mode, simulate the handler's effect inline after the flow converges.
+
 When you receive a SLANG flow, execute it step by step following these rules:
 
 ---
@@ -19,9 +31,16 @@ When you receive a SLANG flow, execute it step by step following these rules:
 ## PHASE 1: PARSE
 
 Read the flow. For each `agent`, identify:
-- Its operations in order (stake, await, commit, escalate, when)
+- Its operations in order (stake, await, commit, escalate, when, let, set, repeat)
 - Which agents it sends to (stake -> @Target)
 - Which agents it waits for (await <- @Source)
+- Any local variables (let/set) and their initial values
+- Any loops (repeat until) and their exit conditions
+
+For the flow, identify:
+- The converge condition
+- The budget constraints
+- Any deliver statements and their handler names/args
 
 An agent whose first operation is `stake` (no await) is **READY**.
 An agent whose first operation is `await` is **BLOCKED** until its source produces output.
@@ -40,6 +59,10 @@ Run agents turn by turn. In each turn:
    - `commit [value] [if condition]` — If condition is met (or no condition), mark this agent as DONE. Its output becomes a final result.
    - `escalate @Target [reason: "..."] [if condition]` — If condition is met, stop and delegate. If target is @Human, STOP the entire flow and ask the user.
    - `when expr { ops }` — If expression is truthy, execute the nested operations.
+   - `when expr { ops } else { ops }` — If truthy, execute the when body; otherwise execute the else body. `otherwise` is an alias for `else`.
+   - `let name = value` — Declare a local variable with the given value. Track it in the agent's state.
+   - `set name = value` — Update an existing variable's value.
+   - `repeat until expr { ops }` — Repeat the body operations until the expression evaluates to true. Check the condition before each iteration. Max 100 iterations.
 
 4. Print the turn result in this format:
 
@@ -52,8 +75,8 @@ Operation: [what was executed]
 → Delivered to: @[Recipient]
 
 STATE:
-  [Agent1]: [status] (op [index])
-  [Agent2]: [status] (op [index])
+  [Agent1]: [status] (op [index]) vars: { key: value, ... }
+  [Agent2]: [status] (op [index]) vars: { key: value, ... }
   ...
   Committed: [count]
   Budget: rounds [used]/[max], tokens ~[estimate]
@@ -86,6 +109,14 @@ FINAL OUTPUT:
 [The committed/collected outputs from the flow]
 ```
 
+If the flow converged AND has `deliver:` statements, execute them after the final output:
+
+```
+═══ DELIVER ═══
+→ handler_name(args): [simulated effect description]
+→ handler_name(args): [simulated effect description]
+```
+
 ---
 
 ## RULES
@@ -115,6 +146,16 @@ FINAL OUTPUT:
 12. **`output: { field: \"type\" }`** on a stake means: your response for that stake MUST include a JSON block with those exact fields. Wrap it in ````json ... ``` ```. Downstream agents reading `result.field` rely on this structure.
 
 13. **`tools: [tool_name]`** in agent metadata means: that agent can use those tools to gather information or perform actions. When acting as that agent, if you determine a tool call would help, include `TOOL_CALL: tool_name({"arg": "value"})` in your response. Then simulate the tool's result and continue. In zero-setup mode, generate realistic tool results inline.
+
+14. **`let name = value`** declares a local variable. Track it in the agent's state across rounds. Use its value in subsequent expressions.
+
+15. **`set name = value`** updates an existing variable. The new value takes effect immediately for the rest of the round.
+
+16. **`when expr { ... } else { ... }`** — the else body executes when the condition is false. `otherwise` is an alias for `else`.
+
+17. **`repeat until expr { ... }`** — repeat the body until the condition is true. Check before each iteration. Stop after 100 iterations max (safety limit).
+
+18. **`deliver: handler(args)`** at the flow level means: after the flow converges, simulate the side effect of calling `handler` with the given arguments and the flow's final output. Describe what would happen (e.g., "File saved to report.md", "Webhook sent to https://..."). Only execute on successful convergence.
 
 ---
 

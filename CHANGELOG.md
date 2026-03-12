@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0]
+
+### Added
+
+- **Variables & State** — `let` / `set` statements for agent-local variables
+  - `let name = expression` — declare a new variable scoped to the agent
+  - `set name = expression` — update an existing variable's value
+  - Variables persist across rounds and are included in the agent's LLM prompt context
+  - Variables are resolved before `await` bindings in expression evaluation
+- **Conditionals: `else` / `otherwise`** — mutually exclusive branches for `when` blocks
+  - `when expr { ... } else { ... }` — execute the else block when the condition is false
+  - `otherwise` is an alias for `else`
+  - Backward compatible: `when` blocks without `else` behave as before
+- **Loops: `repeat until`** — explicit iteration
+  - `repeat until condition { ...operations... }` — repeat the body until the condition is true
+  - Safety limit of 100 iterations prevents infinite loops
+- **Deliver: post-convergence side effects** — `deliver:` flow-level statement
+  - `deliver: handler(args)` — declares a handler to execute after flow convergence
+  - Multiple deliver statements execute in declaration order
+  - Handlers provided via `RuntimeOptions.deliverers` (same pattern as `tools`)
+  - Only runs on successful convergence — not on budget_exceeded, escalated, or deadlock
+- **`onConverge` runtime hook** — `RuntimeOptions.onConverge` callback fires after all deliver handlers complete
+- New AST node types: `LetOp`, `SetOp`, `RepeatBlock`, `ElseBlock`, `DeliverStmt`
+- New tokens: `Let`, `Set`, `Else`, `Otherwise`, `Repeat`, `Until`, `Eq`, `Deliver`
+- New runtime types: `DeliverHandler`, `RuntimeEvent` deliver/on_converge events
+- New example: `examples/finalizer.slang` — Finalizer pattern with deliver
+- 38 new tests (223 total)
+
 ## [0.5.0]
 
 ### Added

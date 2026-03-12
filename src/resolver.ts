@@ -77,6 +77,16 @@ function collectDeps(op: Operation, awaitsFrom: string[], stakesTo: string[]): v
       for (const inner of op.body) {
         collectDeps(inner, awaitsFrom, stakesTo);
       }
+      if (op.elseBlock) {
+        for (const inner of op.elseBlock.body) {
+          collectDeps(inner, awaitsFrom, stakesTo);
+        }
+      }
+      break;
+    case "RepeatBlock":
+      for (const inner of op.body) {
+        collectDeps(inner, awaitsFrom, stakesTo);
+      }
       break;
   }
 }
@@ -178,6 +188,15 @@ export function analyzeFlow(flow: FlowDecl): FlowDiagnostic[] {
       } else if (op.type === "CommitOp") {
         hasCommit = true;
       } else if (op.type === "WhenBlock") {
+        for (const inner of op.body) {
+          checkOperation(inner);
+        }
+        if (op.elseBlock) {
+          for (const inner of op.elseBlock.body) {
+            checkOperation(inner);
+          }
+        }
+      } else if (op.type === "RepeatBlock") {
         for (const inner of op.body) {
           checkOperation(inner);
         }

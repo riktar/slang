@@ -6,6 +6,7 @@ import type {
   EscalateOp, WhenBlock, ImportStmt, ConvergeStmt,
   BudgetStmt, StringLit, NumberLit, BoolLit, Ident,
   AgentRef, ListLit, DotAccess, BinaryExpr,
+  LetOp, SetOp, RepeatBlock, DeliverStmt,
 } from "./ast.js";
 
 // ─── Helpers ───
@@ -672,6 +673,253 @@ describe("Parser", () => {
       assert.ok(op.output);
       assert.equal(op.output!.fields.length, 1);
       assert.equal(op.output!.fields[0]!.name, "valid");
+    });
+  });
+
+  // ─── v0.6: Let / Set ───
+
+  describe("Let / Set", () => {
+    it("parses let with string value", () => {
+      const op = firstOp<LetOp>(`
+        flow "t" {
+          agent A {
+            let summary = "hello world"
+            commit
+          }
+        }
+      `, "LetOp");
+      assert.equal(op.name, "summary");
+      assert.equal((op.value as StringLit).value, "hello world");
+    });
+
+    it("parses let with number value", () => {
+      const op = firstOp<LetOp>(`
+        flow "t" {
+          agent A {
+            let total = 42
+            commit
+          }
+        }
+      `, "LetOp");
+      assert.equal(op.name, "total");
+      assert.equal((op.value as NumberLit).value, 42);
+    });
+
+    it("parses let with identifier value", () => {
+      const op = firstOp<LetOp>(`
+        flow "t" {
+          agent A {
+            let result = data
+            commit
+          }
+        }
+      `, "LetOp");
+      assert.equal(op.name, "result");
+      assert.equal((op.value as Ident).name, "data");
+    });
+
+    it("parses let with boolean value", () => {
+      const op = firstOp<LetOp>(`
+        flow "t" {
+          agent A {
+            let done = false
+            commit
+          }
+        }
+      `, "LetOp");
+      assert.equal(op.name, "done");
+      assert.equal((op.value as BoolLit).value, false);
+    });
+
+    it("parses set statement", () => {
+      const agent = firstAgent(`
+        flow "t" {
+          agent A {
+            let total = 0
+            set total = 1
+            commit
+          }
+        }
+      `);
+      assert.equal(agent.operations.length, 3);
+      assert.equal(agent.operations[0]!.type, "LetOp");
+      assert.equal(agent.operations[1]!.type, "SetOp");
+      const setOp = agent.operations[1] as SetOp;
+      assert.equal(setOp.name, "total");
+      assert.equal((setOp.value as NumberLit).value, 1);
+    });
+
+    it("parses let with dot access value", () => {
+      const op = firstOp<LetOp>(`
+        flow "t" {
+          agent A {
+            let score = result.confidence
+            commit
+          }
+        }
+      `, "LetOp");
+      assert.equal(op.name, "score");
+      const val = op.value as DotAccess;
+      assert.equal(val.type, "DotAccess");
+      assert.equal(val.property, "confidence");
+    });
+  });
+
+  // ─── v0.6: Else / Otherwise ───
+
+  describe("Else / Otherwise", () => {
+    it("parses when with else block", () => {
+      const op = firstOp<WhenBlock>(`flow "t" {
+        agent A {
+          when feedback.approved {
+            commit feedback
+          } else {
+            stake revise(feedback) -> @Reviewer
+          }
+        }
+      }`, "WhenBlock");
+      assert.ok(op.elseBlock);
+      assert.equal(op.elseBlock!.body.length, 1);
+      assert.equal(op.elseBlock!.body[0]!.type, "StakeOp");
+    });
+
+    it("parses when with otherwise block", () => {
+      const op = firstOp<WhenBlock>(`flow "t" {
+        agent A {
+          when data.valid {
+            commit data
+          } otherwise {
+            escalate @Human reason: "invalid data"
+          }
+        }
+      }`, "WhenBlock");
+      assert.ok(op.elseBlock);
+      assert.equal(op.elseBlock!.body.length, 1);
+      assert.equal(op.elseBlock!.body[0]!.type, "EscalateOp");
+    });
+
+    it("parses when without else (backward compatible)", () => {
+      const op = firstOp<WhenBlock>(`flow "t" {
+        agent A {
+          when feedback.approved {
+            commit feedback
+          }
+        }
+      }`, "WhenBlock");
+      assert.equal(op.elseBlock, undefined);
+    });
+
+    it("parses else with multiple operations", () => {
+      const op = firstOp<WhenBlock>(`flow "t" {
+        agent A {
+          when done {
+            commit
+          } else {
+            stake attempt() -> @out
+            escalate @Human reason: "not done"
+          }
+        }
+      }`, "WhenBlock");
+      assert.ok(op.elseBlock);
+      assert.equal(op.elseBlock!.body.length, 2);
+      assert.equal(op.elseBlock!.body[0]!.type, "StakeOp");
+      assert.equal(op.elseBlock!.body[1]!.type, "EscalateOp");
+    });
+  });
+
+  // ─── v0.6: Repeat / Until ───
+
+  describe("Repeat / Until", () => {
+    it("parses repeat until block", () => {
+      const op = firstOp<RepeatBlock>(`flow "t" {
+        agent A {
+          repeat until done {
+            stake work() -> @out
+          }
+        }
+      }`, "RepeatBlock");
+      assert.ok(op.condition);
+      assert.equal((op.condition as Ident).name, "done");
+      assert.equal(op.body.length, 1);
+      assert.equal(op.body[0]!.type, "StakeOp");
+    });
+
+    it("parses repeat with complex condition", () => {
+      const op = firstOp<RepeatBlock>(`flow "t" {
+        agent A {
+          repeat until iterations >= 3 {
+            stake step() -> @out
+          }
+        }
+      }`, "RepeatBlock");
+      const cond = op.condition as BinaryExpr;
+      assert.equal(cond.op, ">=");
+      assert.equal((cond.left as Ident).name, "iterations");
+    });
+
+    it("parses repeat with multiple operations", () => {
+      const op = firstOp<RepeatBlock>(`flow "t" {
+        agent A {
+          repeat until all_committed {
+            stake process() -> @B
+            await result <- @B
+          }
+        }
+      }`, "RepeatBlock");
+      assert.equal(op.body.length, 2);
+      assert.equal(op.body[0]!.type, "StakeOp");
+      assert.equal(op.body[1]!.type, "AwaitOp");
+    });
+  });
+
+  // ─── v0.6: Deliver ───
+
+  describe("Deliver", () => {
+    it("parses deliver statement in flow body", () => {
+      const flow = firstFlow(`flow "t" {
+        agent A {
+          stake work() -> @out
+          commit
+        }
+        deliver: save_file(path: "out.txt")
+        converge when: all_committed
+      }`);
+      const deliver = flow.body.find((n): n is DeliverStmt => n.type === "DeliverStmt");
+      assert.ok(deliver);
+      assert.equal(deliver.call.name, "save_file");
+      assert.equal(deliver.call.args.length, 1);
+      assert.equal(deliver.call.args[0]!.name, "path");
+    });
+
+    it("parses multiple deliver statements", () => {
+      const flow = firstFlow(`flow "t" {
+        agent A {
+          stake work() -> @out
+          commit
+        }
+        deliver: save_file(path: "out.txt")
+        deliver: webhook(url: "https://example.com")
+        converge when: all_committed
+      }`);
+      const delivers = flow.body.filter((n): n is DeliverStmt => n.type === "DeliverStmt");
+      assert.equal(delivers.length, 2);
+      assert.equal(delivers[0]!.call.name, "save_file");
+      assert.equal(delivers[1]!.call.name, "webhook");
+    });
+
+    it("parses deliver with no args", () => {
+      const flow = firstFlow(`flow "t" {
+        agent A {
+          stake work() -> @out
+          commit
+        }
+        deliver: notify()
+        converge when: all_committed
+      }`);
+      const deliver = flow.body.find((n): n is DeliverStmt => n.type === "DeliverStmt");
+      assert.ok(deliver);
+      assert.equal(deliver.call.name, "notify");
+      assert.equal(deliver.call.args.length, 0);
     });
   });
 });

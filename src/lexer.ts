@@ -22,6 +22,8 @@ export enum TokenType {
   As = "as",
   When = "when",
   If = "if",
+  Else = "else",
+  Otherwise = "otherwise",
   Converge = "converge",
   Budget = "budget",
   Role = "role",
@@ -34,6 +36,11 @@ export enum TokenType {
   Reason = "reason",
   Retry = "retry",
   Output = "output",
+  Let = "let",
+  Set = "set",
+  Repeat = "repeat",
+  Until = "until",
+  Deliver = "deliver",
   True = "true",
   False = "false",
 
@@ -52,6 +59,7 @@ export enum TokenType {
   Star = "*",
 
   // Operators
+  Eq = "=",
   Gt = ">",
   Gte = ">=",
   Lt = "<",
@@ -76,6 +84,8 @@ const KEYWORDS: Record<string, TokenType> = {
   as: TokenType.As,
   when: TokenType.When,
   if: TokenType.If,
+  else: TokenType.Else,
+  otherwise: TokenType.Otherwise,
   converge: TokenType.Converge,
   budget: TokenType.Budget,
   role: TokenType.Role,
@@ -88,6 +98,11 @@ const KEYWORDS: Record<string, TokenType> = {
   reason: TokenType.Reason,
   retry: TokenType.Retry,
   output: TokenType.Output,
+  let: TokenType.Let,
+  set: TokenType.Set,
+  repeat: TokenType.Repeat,
+  until: TokenType.Until,
+  deliver: TokenType.Deliver,
   true: TokenType.True,
   false: TokenType.False,
 };
@@ -204,6 +219,13 @@ export function tokenize(source: string): Token[] {
     if (ch === "|" && peekAt(1) === "|") {
       advance(); advance();
       tokens.push(makeToken(TokenType.Or, "||", startLine, startCol, startOffset));
+      continue;
+    }
+
+    // Single = (must come after == check above)
+    if (ch === "=") {
+      advance();
+      tokens.push(makeToken(TokenType.Eq, "=", startLine, startCol, startOffset));
       continue;
     }
 

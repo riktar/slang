@@ -5,8 +5,9 @@ import { SlangError, SlangErrorCode, formatErrorMessage } from "./errors.js";
 import type {
   Program, FlowDecl, FlowBodyItem, ImportStmt,
   AgentDecl, AgentMeta, Operation, StakeOp, AwaitOp,
-  CommitOp, EscalateOp, WhenBlock, FuncCall, Argument,
-  Recipient, Source, ConvergeStmt, BudgetStmt, BudgetItem,
+  CommitOp, EscalateOp, WhenBlock, ElseBlock, LetOp, SetOp, RepeatBlock,
+  FuncCall, Argument,
+  Recipient, Source, ConvergeStmt, BudgetStmt, BudgetItem, DeliverStmt,
   Expr, Span, Position, OutputSchema, OutputField,
 } from "./ast.js";
 
@@ -147,6 +148,9 @@ class Parser {
         case TokenType.Budget:
           items.push(this.parseBudgetStmt());
           break;
+        case TokenType.Deliver:
+          items.push(this.parseDeliverStmt());
+          break;
         default: {
           const err = new ParseError(
             SlangErrorCode.P204,
@@ -155,7 +159,7 @@ class Parser {
           );
           if (!this.recovering) throw err;
           this.errors.push(err);
-          this.synchronize([TokenType.Import, TokenType.Agent, TokenType.Converge, TokenType.Budget, TokenType.RBrace]);
+          this.synchronize([TokenType.Import, TokenType.Agent, TokenType.Converge, TokenType.Budget, TokenType.Deliver, TokenType.RBrace]);
           break;
         }
       }
@@ -234,6 +238,9 @@ class Parser {
       case TokenType.Commit: return this.parseCommitOp();
       case TokenType.Escalate: return this.parseEscalateOp();
       case TokenType.When: return this.parseWhenBlock();
+      case TokenType.Let: return this.parseLetOp();
+      case TokenType.Set: return this.parseSetOp();
+      case TokenType.Repeat: return this.parseRepeatBlock();
       default: {
         const err = new ParseError(
           SlangErrorCode.P203,
@@ -242,7 +249,7 @@ class Parser {
         );
         if (!this.recovering) throw err;
         this.errors.push(err);
-        this.synchronize([TokenType.Stake, TokenType.Await, TokenType.Commit, TokenType.Escalate, TokenType.When, TokenType.RBrace]);
+        this.synchronize([TokenType.Stake, TokenType.Await, TokenType.Commit, TokenType.Escalate, TokenType.When, TokenType.Let, TokenType.Set, TokenType.Repeat, TokenType.RBrace]);
         // Return a dummy commit to keep going
         return { type: "CommitOp", span: this.spanFrom(t) } as CommitOp;
       }
@@ -415,7 +422,54 @@ class Parser {
       body.push(this.parseOperation());
     }
     const end = this.expect(TokenType.RBrace);
-    return { type: "WhenBlock", condition, body, span: this.spanFrom(start, end) };
+
+    // Check for else / otherwise block
+    let elseBlock: ElseBlock | undefined;
+    if (this.check(TokenType.Else) || this.check(TokenType.Otherwise)) {
+      const elseStart = this.advance();
+      this.expect(TokenType.LBrace);
+      const elseBody: Operation[] = [];
+      while (!this.check(TokenType.RBrace) && !this.check(TokenType.EOF)) {
+        elseBody.push(this.parseOperation());
+      }
+      const elseEnd = this.expect(TokenType.RBrace);
+      elseBlock = { type: "ElseBlock", body: elseBody, span: this.spanFrom(elseStart, elseEnd) };
+    }
+
+    return { type: "WhenBlock", condition, body, elseBlock, span: this.spanFrom(start, end) };
+  }
+
+  // ─── Let / Set ───
+
+  private parseLetOp(): LetOp {
+    const start = this.expect(TokenType.Let);
+    const name = this.expect(TokenType.Ident).value;
+    this.expect(TokenType.Eq);
+    const value = this.parseExpr();
+    return { type: "LetOp", name, value, span: this.spanFrom(start) };
+  }
+
+  private parseSetOp(): SetOp {
+    const start = this.expect(TokenType.Set);
+    const name = this.expect(TokenType.Ident).value;
+    this.expect(TokenType.Eq);
+    const value = this.parseExpr();
+    return { type: "SetOp", name, value, span: this.spanFrom(start) };
+  }
+
+  // ─── Repeat ───
+
+  private parseRepeatBlock(): RepeatBlock {
+    const start = this.expect(TokenType.Repeat);
+    this.expect(TokenType.Until);
+    const condition = this.parseExpr();
+    this.expect(TokenType.LBrace);
+    const body: Operation[] = [];
+    while (!this.check(TokenType.RBrace) && !this.check(TokenType.EOF)) {
+      body.push(this.parseOperation());
+    }
+    const end = this.expect(TokenType.RBrace);
+    return { type: "RepeatBlock", condition, body, span: this.spanFrom(start, end) };
   }
 
   // ─── Flow Constraints ───
@@ -461,6 +515,15 @@ class Parser {
     const value = this.parseExpr();
     this.expect(TokenType.RParen);
     return { kind, value };
+  }
+
+  // ─── Deliver ───
+
+  private parseDeliverStmt(): DeliverStmt {
+    const start = this.expect(TokenType.Deliver);
+    this.expect(TokenType.Colon);
+    const call = this.parseFuncCall();
+    return { type: "DeliverStmt", call, span: this.spanFrom(start) };
   }
 
   // ─── Expressions ───
@@ -609,7 +672,8 @@ class Parser {
     const t = this.peek().type;
     return t === TokenType.Stake || t === TokenType.Await ||
            t === TokenType.Commit || t === TokenType.Escalate ||
-           t === TokenType.When;
+           t === TokenType.When || t === TokenType.Let ||
+           t === TokenType.Set || t === TokenType.Repeat;
   }
 
   /** Advance tokens until we reach one of the synchronization points */

@@ -8,7 +8,8 @@ import { SlangError, SlangErrorCode, formatErrorMessage } from "./errors.js";
 import type { LLMAdapter, LLMMessage } from "./adapter.js";
 import type {
   FlowDecl, AgentDecl, Operation, StakeOp, AwaitOp,
-  CommitOp, EscalateOp, WhenBlock, FuncCall, Argument,
+  CommitOp, EscalateOp, WhenBlock, LetOp, SetOp, RepeatBlock,
+  FuncCall, Argument, DeliverStmt,
   Expr, ConvergeStmt, BudgetStmt, BudgetItem,
 } from "./ast.js";
 
@@ -40,6 +41,8 @@ export interface AgentState {
   output: unknown;
   /** data received via await bindings */
   bindings: Record<string, unknown>;
+  /** local variables declared with let/set */
+  variables: Record<string, unknown>;
   /** whether this agent has committed */
   committed: boolean;
   /** escalation target, if escalated */
@@ -63,6 +66,8 @@ export interface FlowState {
 
 export type ToolHandler = (args: Record<string, unknown>) => Promise<string>;
 
+export type DeliverHandler = (output: unknown, args: Record<string, unknown>) => void | Promise<void>;
+
 export interface RuntimeOptions {
   adapter: LLMAdapter;
   /** callback for each event */
@@ -75,6 +80,10 @@ export interface RuntimeOptions {
   resumeFrom?: FlowState;
   /** tool handler implementations — keys match tool names declared in agent `tools:` metadata */
   tools?: Record<string, ToolHandler>;
+  /** callback invoked after the flow converges successfully */
+  onConverge?: (state: FlowState) => void | Promise<void>;
+  /** deliver handler implementations — keys match handler names used in `deliver:` statements */
+  deliverers?: Record<string, DeliverHandler>;
 }
 
 export type RuntimeEvent =
@@ -87,6 +96,8 @@ export type RuntimeEvent =
   | { type: "tool_call"; agent: string; tool: string; args: Record<string, unknown> }
   | { type: "tool_result"; agent: string; tool: string; result: string }
   | { type: "checkpoint"; round: number }
+  | { type: "deliver"; handler: string; args: Record<string, unknown> }
+  | { type: "on_converge" }
   | { type: "flow_converged"; outputs: unknown[] }
   | { type: "flow_budget_exceeded"; round: number }
   | { type: "flow_deadlock"; agents: string[] }
@@ -108,7 +119,7 @@ export async function runFlow(source: string, options: RuntimeOptions): Promise<
 }
 
 async function executeFlow(flow: FlowDecl, options: RuntimeOptions): Promise<FlowState> {
-  const { adapter, onEvent, parallel = true, checkpoint, resumeFrom, tools } = options;
+  const { adapter, onEvent, parallel = true, checkpoint, resumeFrom, tools, onConverge, deliverers } = options;
   const depGraph = resolveDeps(flow);
   const deadlocks = detectDeadlocks(depGraph);
 
@@ -123,6 +134,7 @@ async function executeFlow(flow: FlowDecl, options: RuntimeOptions): Promise<Flo
   const maxRounds = extractBudgetValue(budgetNode, "rounds") ?? 10;
   const maxTokens = extractBudgetValue(budgetNode, "tokens") ?? Infinity;
   const agentDecls = flow.body.filter((n): n is AgentDecl => n.type === "AgentDecl");
+  const deliverStmts = flow.body.filter((n): n is DeliverStmt => n.type === "DeliverStmt");
 
   // Initialize state (or resume from checkpoint)
   const state: FlowState = resumeFrom
@@ -137,6 +149,7 @@ async function executeFlow(flow: FlowDecl, options: RuntimeOptions): Promise<Flo
         opIndex: 0,
         output: undefined,
         bindings: {},
+        variables: {},
         committed: false,
       });
     }
@@ -279,6 +292,36 @@ async function executeFlow(flow: FlowDecl, options: RuntimeOptions): Promise<Flo
     await checkpoint(cloneFlowState(state));
   }
 
+  // Post-convergence: execute deliver statements and onConverge hook
+  if (state.status === "converged") {
+    // Execute deliver statements
+    if (deliverStmts.length > 0 && deliverers) {
+      const flowOutput = state.outputs.length > 0 ? state.outputs[state.outputs.length - 1] : undefined;
+      for (const deliver of deliverStmts) {
+        const handler = deliverers[deliver.call.name];
+        if (handler) {
+          const args: Record<string, unknown> = {};
+          for (const arg of deliver.call.args) {
+            const key = arg.name ?? `arg${deliver.call.args.indexOf(arg)}`;
+            const val = arg.value;
+            if (val.type === "StringLit") args[key] = val.value;
+            else if (val.type === "NumberLit") args[key] = val.value;
+            else if (val.type === "BoolLit") args[key] = val.value;
+            else if (val.type === "Ident") args[key] = val.name;
+          }
+          onEvent?.({ type: "deliver", handler: deliver.call.name, args });
+          await handler(flowOutput, args);
+        }
+      }
+    }
+
+    // Execute onConverge hook
+    if (onConverge) {
+      onEvent?.({ type: "on_converge" });
+      await onConverge(state);
+    }
+  }
+
   return state;
 }
 
@@ -304,6 +347,12 @@ async function executeOperation(
       return executeEscalateOp(agentState, op, flowState);
     case "WhenBlock":
       return executeWhen(agentDecl, agentState, op, flowState, adapter, onEvent, tools);
+    case "LetOp":
+      return executeLet(agentState, op, flowState);
+    case "SetOp":
+      return executeSet(agentState, op, flowState);
+    case "RepeatBlock":
+      return executeRepeat(agentDecl, agentState, op, flowState, adapter, onEvent, tools);
   }
 }
 
@@ -480,11 +529,58 @@ async function executeWhen(
   tools?: Record<string, ToolHandler>,
 ): Promise<"continue" | "commit" | "escalate"> {
   if (!evalCondition(op.condition, agentState, flowState)) {
+    // Condition is false — execute else block if present
+    if (op.elseBlock) {
+      for (const innerOp of op.elseBlock.body) {
+        const result = await executeOperation(agentDecl, agentState, innerOp, flowState, adapter, onEvent, tools);
+        if (result !== "continue") return result;
+      }
+    }
     return "continue";
   }
   for (const innerOp of op.body) {
     const result = await executeOperation(agentDecl, agentState, innerOp, flowState, adapter, onEvent, tools);
     if (result !== "continue") return result;
+  }
+  return "continue";
+}
+
+function executeLet(
+  agentState: AgentState,
+  op: LetOp,
+  flowState: FlowState,
+): "continue" | "commit" | "escalate" {
+  agentState.variables[op.name] = resolveExprValue(op.value, agentState, flowState);
+  return "continue";
+}
+
+function executeSet(
+  agentState: AgentState,
+  op: SetOp,
+  flowState: FlowState,
+): "continue" | "commit" | "escalate" {
+  agentState.variables[op.name] = resolveExprValue(op.value, agentState, flowState);
+  return "continue";
+}
+
+async function executeRepeat(
+  agentDecl: AgentDecl,
+  agentState: AgentState,
+  op: RepeatBlock,
+  flowState: FlowState,
+  adapter: LLMAdapter,
+  onEvent?: (event: RuntimeEvent) => void,
+  tools?: Record<string, ToolHandler>,
+): Promise<"continue" | "commit" | "escalate"> {
+  const MAX_ITERATIONS = 100; // safety limit
+  let iterations = 0;
+  while (!evalCondition(op.condition, agentState, flowState)) {
+    iterations++;
+    if (iterations > MAX_ITERATIONS) break;
+    for (const innerOp of op.body) {
+      const result = await executeOperation(agentDecl, agentState, innerOp, flowState, adapter, onEvent, tools);
+      if (result !== "continue") return result;
+    }
   }
   return "continue";
 }
@@ -559,6 +655,10 @@ function buildAgentPrompt(
     contextParts.push(`[${key}]:\n${typeof value === "string" ? value : JSON.stringify(value, null, 2)}`);
   }
 
+  for (const [key, value] of Object.entries(agentState.variables)) {
+    contextParts.push(`[var:${key}]:\n${typeof value === "string" ? value : JSON.stringify(value, null, 2)}`);
+  }
+
   if (contextParts.length > 0) {
     user = `Here is the context you received:\n\n${contextParts.join("\n\n")}\n\nExecute your task based on this context.`;
   }
@@ -587,6 +687,10 @@ function exprToString(expr: Expr, agentState: AgentState): string {
     case "NumberLit": return String(expr.value);
     case "BoolLit": return String(expr.value);
     case "Ident": {
+      if (agentState.variables[expr.name] !== undefined) {
+        const val = agentState.variables[expr.name];
+        return typeof val === "string" ? val : JSON.stringify(val);
+      }
       if (agentState.bindings[expr.name] !== undefined) {
         const val = agentState.bindings[expr.name];
         return typeof val === "string" ? val : JSON.stringify(val);
@@ -618,6 +722,7 @@ function resolveExprValue(expr: Expr, agentState: AgentState, flowState: FlowSta
         return [...flowState.agents.values()].every((a) => a.committed);
       }
       if (expr.name === "round") return flowState.round;
+      if (expr.name in agentState.variables) return agentState.variables[expr.name];
       if (expr.name in agentState.bindings) return agentState.bindings[expr.name];
       return undefined;
     }
@@ -686,6 +791,7 @@ function evalConvergence(converge: ConvergeStmt, state: FlowState): boolean {
     output: undefined,
     bindings: {},
     committed: false,
+    variables: {},
   };
   return !!resolveExprValue(converge.condition, dummyAgent, state);
 }
