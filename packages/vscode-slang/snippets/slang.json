@@ -1,0 +1,166 @@
+{
+  "Flow": {
+    "prefix": "flow",
+    "body": [
+      "flow \"${1:name}\" {",
+      "  agent ${2:Agent} {",
+      "    role: \"${3:description}\"",
+      "    $0",
+      "  }",
+      "  converge when: all_committed",
+      "}"
+    ],
+    "description": "SLANG flow declaration"
+  },
+  "Agent": {
+    "prefix": "agent",
+    "body": [
+      "agent ${1:Name} {",
+      "  role: \"${2:description}\"",
+      "  model: \"${3:gpt-4o}\"",
+      "  $0",
+      "}"
+    ],
+    "description": "Agent declaration with meta"
+  },
+  "Agent with tools": {
+    "prefix": "agent-tools",
+    "body": [
+      "agent ${1:Name} {",
+      "  role: \"${2:description}\"",
+      "  model: \"${3:gpt-4o}\"",
+      "  tools: [${4:tool_name}]",
+      "  $0",
+      "}"
+    ],
+    "description": "Agent declaration with tools"
+  },
+  "Stake": {
+    "prefix": "stake",
+    "body": [
+      "stake ${1:func}(${2:args}) -> @${3:Target}"
+    ],
+    "description": "Produce & send to target agent"
+  },
+  "Stake with output": {
+    "prefix": "stake-output",
+    "body": [
+      "stake ${1:func}(${2:args}) -> @${3:Target}",
+      "  output: { ${4:field}: \"${5:string}\" }"
+    ],
+    "description": "Stake with structured output schema"
+  },
+  "Await": {
+    "prefix": "await",
+    "body": [
+      "await ${1:data} <- @${2:Source}"
+    ],
+    "description": "Wait for input from source agent"
+  },
+  "Commit": {
+    "prefix": "commit",
+    "body": [
+      "commit${1: ${2:value}}${3: if ${4:condition}}"
+    ],
+    "description": "Accept result and stop"
+  },
+  "Escalate": {
+    "prefix": "escalate",
+    "body": [
+      "escalate @${1:Human}${2: reason: \"${3:reason}\"}${4: if ${5:condition}}"
+    ],
+    "description": "Delegate to another agent"
+  },
+  "When block": {
+    "prefix": "when",
+    "body": [
+      "when ${1:condition} {",
+      "  $0",
+      "}"
+    ],
+    "description": "Conditional execution"
+  },
+  "When/Else block": {
+    "prefix": "when-else",
+    "body": [
+      "when ${1:condition} {",
+      "  $2",
+      "} else {",
+      "  $0",
+      "}"
+    ],
+    "description": "Conditional with else branch"
+  },
+  "Repeat until": {
+    "prefix": "repeat",
+    "body": [
+      "repeat until ${1:condition} {",
+      "  $0",
+      "}"
+    ],
+    "description": "Loop until condition"
+  },
+  "Let variable": {
+    "prefix": "let",
+    "body": [
+      "let ${1:name} = ${0:value}"
+    ],
+    "description": "Declare local variable"
+  },
+  "Set variable": {
+    "prefix": "set",
+    "body": [
+      "set ${1:name} = ${0:value}"
+    ],
+    "description": "Update local variable"
+  },
+  "Converge": {
+    "prefix": "converge",
+    "body": [
+      "converge when: ${1:all_committed}"
+    ],
+    "description": "Convergence condition"
+  },
+  "Budget": {
+    "prefix": "budget",
+    "body": [
+      "budget: tokens(${1:1000000}), rounds(${2:50})"
+    ],
+    "description": "Resource limits"
+  },
+  "Deliver": {
+    "prefix": "deliver",
+    "body": [
+      "deliver: ${1:handler}(${2:args})"
+    ],
+    "description": "Post-convergence side effect"
+  },
+  "Import": {
+    "prefix": "import",
+    "body": [
+      "import \"${1:path}\" as ${2:alias}"
+    ],
+    "description": "Import another flow"
+  },
+  "Research flow": {
+    "prefix": "flow-research",
+    "body": [
+      "flow \"${1:research}\" {",
+      "  agent Researcher {",
+      "    role: \"${2:Research the topic thoroughly}\"",
+      "    tools: [${3:web_search}]",
+      "    stake gather(topic: \"${4:topic}\") -> @Analyst",
+      "  }",
+      "  agent Analyst {",
+      "    role: \"${5:Analyze and synthesize findings}\"",
+      "    await data <- @Researcher",
+      "    stake analyze(data) -> @out",
+      "    commit",
+      "  }",
+      "  converge when: all_committed",
+      "  budget: tokens(${6:1000000}), rounds(${7:20})",
+      "}"
+    ],
+    "description": "Research flow with Researcher → Analyst pattern"
+  }
+}

@@ -13,8 +13,7 @@ flow "article" {
 
     when feedback.approved {
       commit feedback
-    }
-    when feedback.rejected {
+    } else {
       stake revise(feedback) -> @Reviewer
     }
   }
@@ -25,8 +24,9 @@ flow "article" {
     await draft <- @Writer
     stake review(draft, criteria: ["clarity", "accuracy", "completeness"]) -> @Writer
       output: { approved: "boolean", score: "number", notes: "string" }
+    commit
   }
 
-  converge when: committed_count >= 1
+  converge when: all_committed
   budget: rounds(3)
 }

@@ -10,6 +10,7 @@
   <a href="#two-ways-to-use-slang">How it works</a> •
   <a href="#quick-start">Quick Start</a> •
   <a href="#why-slang">Why SLANG</a> •
+  <a href="#ide-support">IDE Support</a> •
   <a href="#playground">Playground</a> •
   <a href="#cli">CLI</a> •
   <a href="#api">API</a> •
@@ -104,6 +105,7 @@ Checkpoint and resume. Deadlock detection. Structured output. Everything you nee
 | `output:` structured contracts | ✅ best-effort | ✅ enforced |
 | Checkpoint & resume | ❌ | ✅ |
 | Static analysis & deadlock detection | ❌ | ✅ |
+| IDE support (LSP, syntax highlighting) | ❌ | ✅ |
 | Web playground | ❌ | ✅ |
 
 Start with zero-setup to prototype. Move to CLI or API when you're ready to ship. Same file both ways.
@@ -217,6 +219,103 @@ No diagrams, no comments, no docs needed. The `.slang` file is the documentation
 | Docs | Separate files | Built into the flow |
 
 SLANG isn't trying to replace SDKs. Like SQL didn't replace Java. It's a different category: declarative orchestration.
+
+---
+
+## IDE Support
+
+SLANG has first-class editor support. Syntax highlighting, real-time diagnostics, autocompletion, go-to-definition, hover docs.
+
+### VS Code
+
+Install the **SLANG** extension from the Marketplace, or from `.vsix`:
+
+```bash
+cd packages/vscode-slang
+npm run build
+npx vsce package
+code --install-extension vscode-slang-0.7.0.vsix
+```
+
+You get:
+- **Syntax highlighting** — keywords, primitives, `@AgentRef`, strings, operators, comments
+- **Real-time diagnostics** — parse errors, unknown agent references, deadlock detection, missing converge/budget warnings
+- **Autocompletion** — keywords, `@AgentName` refs, meta keys
+- **Go-to-definition** — click `@AgentName` → jumps to agent declaration
+- **Hover** — keyword docs, agent info summary
+- **Document outline** — flows → agents → operations
+- **18 snippets** — `flow`, `agent`, `stake`, `await`, `commit`, `when-else`, `repeat`, `budget`, `converge`, `deliver`, and more
+
+### Any LSP-compatible editor (Neovim, Emacs, Helix, Zed, etc.)
+
+The SLANG LSP server works with any editor that supports the Language Server Protocol:
+
+```bash
+npm install -g @riktar/slang-lsp
+```
+
+Then configure your editor to use `slang-lsp` as the language server for `.slang` files (stdio transport).
+
+<details>
+<summary>Neovim (nvim-lspconfig)</summary>
+
+```lua
+vim.api.nvim_create_autocmd("FileType", {
+  pattern = "slang",
+  callback = function()
+    vim.lsp.start({
+      name = "slang-lsp",
+      cmd = { "slang-lsp" },
+      root_dir = vim.fn.getcwd(),
+    })
+  end,
+})
+```
+
+</details>
+
+<details>
+<summary>Helix (~/.config/helix/languages.toml)</summary>
+
+```toml
+[[language]]
+name = "slang"
+scope = "source.slang"
+file-types = ["slang"]
+language-servers = ["slang-lsp"]
+comment-token = "--"
+
+[language-server.slang-lsp]
+command = "slang-lsp"
+```
+
+</details>
+
+### Vim/Neovim (syntax only, no LSP)
+
+Copy the syntax files from `editors/vim/`:
+
+```bash
+cp editors/vim/syntax/slang.vim ~/.vim/syntax/
+cp editors/vim/ftdetect/slang.vim ~/.vim/ftdetect/
+```
+
+### Sublime Text
+
+Copy the syntax file to your Sublime packages:
+
+```bash
+cp editors/sublime/slang.sublime-syntax ~/Library/Application\ Support/Sublime\ Text/Packages/User/
+# Linux: ~/.config/sublime-text/Packages/User/
+```
+
+### JetBrains (IntelliJ, WebStorm, PyCharm, etc.)
+
+1. Go to **Settings → Editor → TextMate Bundles**
+2. Click **+** and select `editors/jetbrains/` from this repository
+3. Restart the IDE
+
+Full setup instructions: [IDE_SUPPORT.md](IDE_SUPPORT.md)
 
 ---
 
@@ -482,6 +581,7 @@ Source → Lexer → Parser → AST → Resolver → Graph → Runtime → Resul
 | Resolver | Builds dependency graph, checks for deadlocks |
 | Runtime | Schedules agents, mailbox, parallel dispatch, tools |
 | Adapters | Connect to LLMs (OpenAI, Anthropic, OpenRouter, etc) |
+| LSP | Language Server: diagnostics, completion, go-to-def, hover |
 | Playground | Web editor (React + Vite) with visualization, tests |
 
 ## Examples

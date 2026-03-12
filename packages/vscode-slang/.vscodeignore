@@ -1,0 +1,10 @@
+**
+!dist/**
+!syntaxes/**
+!snippets/**
+!language-configuration.json
+!package.json
+!icon.png
+!LICENSE
+!README.md
+

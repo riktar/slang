@@ -20,7 +20,7 @@ import {
 
 function printUsage(): void {
   console.log(`
-  slang — SLANG interpreter v0.6.6
+  slang — SLANG interpreter v0.7.0
 
   USAGE:
     slang init [dir]               Scaffold a new SLANG project
@@ -436,7 +436,7 @@ async function cmdRun(args: Record<string, string>): Promise<void> {
   const deliverers = args["deliverers"] ? await loadDeliverers(args["deliverers"]) : undefined;
   const debug = args["debug"] === "true";
 
-  console.log(`${COLORS.bold}SLANG v0.6.6${COLORS.reset} — running ${file} with ${(adapter as any).name ?? args["adapter"] ?? "echo"}`);
+  console.log(`${COLORS.bold}SLANG v0.7.0${COLORS.reset} — running ${file} with ${(adapter as any).name ?? args["adapter"] ?? "echo"}`);
   if (tools) {
     console.log(`${COLORS.dim}Tools loaded: ${Object.keys(tools).join(", ")}${COLORS.reset}`);
   }

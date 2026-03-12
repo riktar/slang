@@ -19,18 +19,21 @@ flow "parallel-report" {
     role: "Market research specialist"
     await task <- @Coordinator
     stake research(task, focus: "market trends and sizing") -> @Coordinator
+    commit
   }
 
   agent TechAnalyst {
     role: "Technology trend analyst"
     await task <- @Coordinator
     stake research(task, focus: "technology landscape and innovation") -> @Coordinator
+    commit
   }
 
   agent FinanceAnalyst {
     role: "Financial analyst specializing in projections"
     await task <- @Coordinator
     stake research(task, focus: "financial projections and unit economics") -> @Coordinator
+    commit
   }
 
   converge when: all_committed

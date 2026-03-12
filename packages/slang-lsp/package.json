@@ -1,0 +1,25 @@
+{
+  "name": "@riktar/slang-lsp",
+  "version": "0.7.0",
+  "description": "Language Server Protocol implementation for SLANG",
+  "type": "module",
+  "main": "./dist/server.js",
+  "bin": {
+    "slang-lsp": "./dist/server.js"
+  },
+  "files": ["dist"],
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch"
+  },
+  "dependencies": {
+    "@riktar/slang": "*",
+    "vscode-languageserver": "^9.0.1",
+    "vscode-languageserver-textdocument": "^1.0.12"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.1",
+    "typescript": "^5.7.0"
+  }
+}

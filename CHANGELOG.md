@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] — Language Server Protocol & IDE Support
+
+### Added
+
+- **LSP Server** (`@riktar/slang-lsp`) — full Language Server Protocol implementation for `.slang` files
+  - Real-time diagnostics from `parseWithRecovery()` + `analyzeFlow()` + `detectDeadlocks()`
+  - **Autocompletion** — keywords, `@AgentRef` references, meta keys (`role:`, `model:`, `tools:`, etc.)
+  - **Go-to-definition** — click on `@AgentName` to jump to the agent declaration
+  - **Hover information** — keyword docs, agent metadata summary, special ref descriptions (`@out`, `@all`, `@Human`)
+  - **Document symbols** — outline view with flows, agents, operations
+  - Communicates via stdio — works with any LSP-compatible editor
+- **VS Code Extension** (`vscode-slang`) — first-class IDE support
+  - TextMate grammar for full syntax highlighting (keywords, primitives, agent refs, strings, operators)
+  - Language configuration: bracket matching, auto-closing, comment toggling (`--`), folding
+  - 18 snippets for common patterns: `flow`, `agent`, `stake/await/commit`, `when/else`, `repeat until`, `converge`, `budget`, `deliver`, `import`, and a full `flow-research` template
+  - LSP client for real-time diagnostics, completions, hover, go-to-definition
+- **Editor grammars** for Vim, Sublime Text, and JetBrains IDEs
+  - **Vim/Neovim**: syntax file (`editors/vim/syntax/slang.vim`) + filetype detection (`editors/vim/ftdetect/slang.vim`)
+  - **Sublime Text**: `.sublime-syntax` definition (`editors/sublime/slang.sublime-syntax`)
+  - **JetBrains**: TextMate bundle ready for import (`editors/jetbrains/`)
+- **IDE documentation** — new [IDE_SUPPORT.md](IDE_SUPPORT.md) with setup instructions for all editors
+- Monorepo workspace support via npm workspaces (`packages/slang-lsp`, `packages/vscode-slang`)
+- New build scripts: `build:lsp`, `build:vscode`, `build:all`
+
 ## [0.6.6]
 
 ### Added

@@ -6,6 +6,7 @@ flow "report-with-delivery" {
     role: "Web research specialist"
     tools: [web_search]
     stake gather(topic: "AI agent frameworks 2025") -> @Writer
+    commit
   }
 
   agent Writer {
@@ -19,6 +20,6 @@ flow "report-with-delivery" {
   deliver: save_file(path: "report.md", format: "markdown")
   deliver: webhook(url: "https://hooks.example.com/reports")
 
-  converge when: committed_count >= 1
+  converge when: all_committed
   budget: rounds(3)
 }

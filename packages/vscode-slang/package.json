@@ -1,0 +1,57 @@
+{
+  "name": "vscode-slang-super-language-for-agent-negotiation-governance",
+  "displayName": "SLANG - Super Language for Agent Negotiation & Governance",
+  "description": "Language support for SLANG — Super Language for Agent Negotiation & Governance",
+  "version": "0.7.0",
+  "publisher": "riktar",
+  "license": "MIT",
+  "icon": "icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/riktar/slang"
+  },
+  "categories": ["Programming Languages", "Linters", "Snippets"],
+  "keywords": ["slang", "ai", "agents", "orchestration", "llm", "multi-agent"],
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "activationEvents": [
+    "onLanguage:slang"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "slang",
+        "aliases": ["SLANG", "slang"],
+        "extensions": [".slang"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "slang",
+        "scopeName": "source.slang",
+        "path": "./syntaxes/slang.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "slang",
+        "path": "./snippets/slang.json"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "package": "vsce package --no-dependencies",
+    "publish": "vsce publish --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "vscode-languageclient": "^9.0.1",
+    "tsup": "^8.5.1",
+    "typescript": "^5.7.0"
+  }
+}

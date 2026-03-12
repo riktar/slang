@@ -1,6 +1,6 @@
 {
   "name": "@riktar/slang",
-  "version": "0.6.6",
+  "version": "0.7.0",
   "description": "SLANG — Super Language for Agent Negotiation & Governance",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -17,6 +17,10 @@
     "slang": "./dist/cli.js",
     "slang-mcp": "./dist/mcp.js"
   },
+  "workspaces": [
+    "packages/slang-lsp",
+    "packages/vscode-slang"
+  ],
   "files": [
     "dist",
     "playground/dist",
@@ -27,7 +31,10 @@
   },
   "scripts": {
     "build": "tsup",
+    "build:lsp": "cd packages/slang-lsp && npm run build",
+    "build:vscode": "cd packages/vscode-slang && npm run build",
     "build:playground": "cd playground && npm install && npx vite build",
+    "build:all": "npm run build && npm run build:lsp && npm run build:vscode",
     "postbuild": "chmod +x dist/cli.js dist/mcp.js",
     "dev": "tsup --watch",
     "test": "node --import tsx/esm --test src/**/*.test.ts",

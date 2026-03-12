@@ -1,0 +1,103 @@
+%YAML 1.2
+---
+# Sublime Text syntax definition for SLANG
+# Repository: https://github.com/riktar/slang
+name: SLANG
+file_extensions:
+  - slang
+scope: source.slang
+
+contexts:
+  main:
+    - include: comments
+    - include: strings
+    - include: numbers
+    - include: booleans
+    - include: agent-refs
+    - include: agent-decl
+    - include: flow-decl
+    - include: primitives
+    - include: structure
+    - include: conditionals
+    - include: loops
+    - include: constraints
+    - include: meta
+    - include: variables
+    - include: operators
+
+  comments:
+    - match: '--.*$'
+      scope: comment.line.double-dash.slang
+
+  strings:
+    - match: '"'
+      scope: punctuation.definition.string.begin.slang
+      push:
+        - meta_scope: string.quoted.double.slang
+        - match: '\\[nrt"\\]'
+          scope: constant.character.escape.slang
+        - match: '"'
+          scope: punctuation.definition.string.end.slang
+          pop: true
+
+  numbers:
+    - match: '\b[0-9]+(\.[0-9]+)?\b'
+      scope: constant.numeric.slang
+
+  booleans:
+    - match: '\b(true|false)\b'
+      scope: constant.language.boolean.slang
+
+  agent-refs:
+    - match: '@[A-Za-z_][A-Za-z0-9_]*'
+      scope: variable.other.agent-ref.slang
+
+  agent-decl:
+    - match: '\b(agent)\s+([A-Z][A-Za-z0-9_]*)'
+      captures:
+        1: keyword.control.agent.slang
+        2: entity.name.type.agent.slang
+
+  flow-decl:
+    - match: '\b(flow)\s+("[^"]*")'
+      captures:
+        1: keyword.control.flow.slang
+        2: string.quoted.double.slang
+
+  primitives:
+    - match: '\b(stake|await|commit|escalate)\b'
+      scope: keyword.control.primitive.slang
+
+  structure:
+    - match: '\b(flow|agent|import|as|deliver)\b'
+      scope: keyword.control.flow.slang
+
+  conditionals:
+    - match: '\b(when|if|else|otherwise)\b'
+      scope: keyword.control.conditional.slang
+
+  loops:
+    - match: '\b(repeat|until)\b'
+      scope: keyword.control.loop.slang
+
+  constraints:
+    - match: '\b(converge|budget)\b'
+      scope: keyword.control.constraint.slang
+
+  meta:
+    - match: '\b(role|model|tools|tokens|rounds|time|count|reason|retry|output)\b'
+      scope: keyword.other.meta.slang
+
+  variables:
+    - match: '\b(let|set)\b'
+      scope: keyword.other.variable.slang
+
+  operators:
+    - match: '->|<-'
+      scope: keyword.operator.arrow.slang
+    - match: '==|!=|>=|<=|>|<'
+      scope: keyword.operator.comparison.slang
+    - match: '&&|\|\|'
+      scope: keyword.operator.logical.slang
+    - match: '='
+      scope: keyword.operator.assignment.slang

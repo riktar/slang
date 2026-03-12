@@ -1,0 +1,155 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "SLANG",
+  "scopeName": "source.slang",
+  "fileTypes": ["slang"],
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#flow" },
+    { "include": "#keywords" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#agent-refs" },
+    { "include": "#operators" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-dash.slang",
+          "match": "--.*$"
+        }
+      ]
+    },
+    "flow": {
+      "patterns": [
+        {
+          "match": "\\b(flow)\\s+(\"[^\"]*\")",
+          "captures": {
+            "1": { "name": "keyword.control.flow.slang" },
+            "2": { "name": "string.quoted.double.slang" }
+          }
+        },
+        {
+          "match": "\\b(agent)\\s+([A-Z][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.control.agent.slang" },
+            "2": { "name": "entity.name.type.agent.slang" }
+          }
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.primitive.slang",
+          "match": "\\b(stake|await|commit|escalate)\\b"
+        },
+        {
+          "name": "keyword.control.flow.slang",
+          "match": "\\b(flow|agent|import|as|deliver)\\b"
+        },
+        {
+          "name": "keyword.control.conditional.slang",
+          "match": "\\b(when|if|else|otherwise)\\b"
+        },
+        {
+          "name": "keyword.control.loop.slang",
+          "match": "\\b(repeat|until)\\b"
+        },
+        {
+          "name": "keyword.control.constraint.slang",
+          "match": "\\b(converge|budget)\\b"
+        },
+        {
+          "name": "keyword.other.meta.slang",
+          "match": "\\b(role|model|tools|tokens|rounds|time|count|reason|retry|output)\\b"
+        },
+        {
+          "name": "keyword.other.variable.slang",
+          "match": "\\b(let|set)\\b"
+        },
+        {
+          "name": "constant.language.boolean.slang",
+          "match": "\\b(true|false)\\b"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.slang",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.slang",
+              "match": "\\\\[nrt\"\\\\]"
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.slang",
+          "match": "\\b[0-9]+(\\.[0-9]+)?\\b"
+        }
+      ]
+    },
+    "agent-refs": {
+      "patterns": [
+        {
+          "name": "variable.other.agent-ref.slang",
+          "match": "@[A-Za-z_][A-Za-z0-9_]*"
+        },
+        {
+          "name": "variable.other.agent-ref.special.slang",
+          "match": "@(out|all|Human|any)"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.arrow.slang",
+          "match": "->|<-"
+        },
+        {
+          "name": "keyword.operator.comparison.slang",
+          "match": "==|!=|>=|<=|>|<"
+        },
+        {
+          "name": "keyword.operator.logical.slang",
+          "match": "&&|\\|\\|"
+        },
+        {
+          "name": "keyword.operator.assignment.slang",
+          "match": "="
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.definition.block.slang",
+          "match": "[{}]"
+        },
+        {
+          "name": "punctuation.definition.parameters.slang",
+          "match": "[()]"
+        },
+        {
+          "name": "punctuation.definition.array.slang",
+          "match": "[\\[\\]]"
+        },
+        {
+          "name": "punctuation.separator.slang",
+          "match": "[:,.]"
+        }
+      ]
+    }
+  }
+}

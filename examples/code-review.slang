@@ -15,8 +15,7 @@ flow "code-review" {
 
     when feedback.approved {
       commit feedback
-    }
-    when feedback.rejected {
+    } else {
       stake revise(feedback.notes, original: feedback) -> @Reviewer
         output: { code: "string", tests: "string", language: "string" }
     }
@@ -29,8 +28,9 @@ flow "code-review" {
     await code <- @Developer
     stake review(code, checks: ["security", "performance", "error handling"]) -> @Developer
       output: { approved: "boolean", score: "number", notes: "string" }
+    commit
   }
 
-  converge when: committed_count >= 1
+  converge when: all_committed
   budget: rounds(4)
 }
