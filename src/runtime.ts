@@ -292,8 +292,9 @@ async function executeFlow(flow: FlowDecl, options: RuntimeOptions): Promise<Flo
     await checkpoint(cloneFlowState(state));
   }
 
-  // Post-convergence: execute deliver statements and onConverge hook
-  if (state.status === "converged") {
+  // Post-flow: execute deliver statements and onConverge hook
+  // Delivers run on any terminal status (converged, budget_exceeded, deadlock, escalated)
+  {
     // Execute deliver statements
     if (deliverStmts.length > 0 && deliverers) {
       const flowOutput = state.outputs.length > 0 ? state.outputs[state.outputs.length - 1] : undefined;

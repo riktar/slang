@@ -1287,7 +1287,7 @@ describe("Runtime", () => {
       assert.equal(convergedState!.status, "converged");
     });
 
-    it("does not call deliver or onConverge when budget exceeded", async () => {
+    it("calls deliver and onConverge even when budget exceeded", async () => {
       let onConvergeCalled = false;
       const delivered: unknown[] = [];
       const state = await runFlow(`
@@ -1310,8 +1310,8 @@ describe("Runtime", () => {
       });
 
       assert.equal(state.status, "budget_exceeded");
-      assert.equal(delivered.length, 0);
-      assert.equal(onConvergeCalled, false);
+      assert.equal(delivered.length, 1);
+      assert.equal(onConvergeCalled, true);
     });
 
     it("calls multiple deliver handlers in order", async () => {

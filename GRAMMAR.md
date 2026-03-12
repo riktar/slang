@@ -1,7 +1,7 @@
 # SLANG Language Playbook
 
 > Complete syntax reference, formal grammar, and annotated examples for  
-> **SLANG v0.6.2** — Super Language for Agent Negotiation & Governance.
+> **SLANG v0.6.3** — Super Language for Agent Negotiation & Governance.
 
 ---
 

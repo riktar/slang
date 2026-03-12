@@ -1,6 +1,6 @@
 # SLANG — Super Language for Agent Negotiation & Governance
 
-## Specification v0.6.2
+## Specification v0.6.3
 
 ---
 
