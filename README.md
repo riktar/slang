@@ -258,6 +258,7 @@ slang playground             # Launch the web playground
 | `--base-url` | Custom endpoint (Ollama, local models) |
 | `--tools` | JS file with tool handlers (see [`examples/tools.js`](examples/tools.js)) |
 | `--deliverers` | JS file with deliver handlers (post-convergence side effects) |
+| `--debug` | Show full round-by-round agent output (silent by default) |
 | `--port` | Playground port (default `5174`) |
 
 ### `.env` support

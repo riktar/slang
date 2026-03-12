@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.6]
+
+### Added
+
+- **Silent output by default** — round-by-round agent outputs are now hidden during flow execution. Only a progress indicator and the final result are shown.
+- **`--debug` flag** — pass `--debug` to restore full verbose output (round headers, agent operations, LLM responses, tool calls).
+- **Committed agent outputs in result** — the final result section now always displays each committed agent's output, so the flow content is always visible at the end.
+
 ## [0.6.5]
 
 ### Fixed

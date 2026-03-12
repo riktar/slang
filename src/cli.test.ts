@@ -208,3 +208,51 @@ export default {
   });
 });
 
+// ─── --debug flag ───
+
+describe("CLI: --debug flag", () => {
+  const tmpDir = join(import.meta.dirname, "../.test-debug-" + process.pid);
+
+  beforeEach(() => {
+    mkdirSync(tmpDir, { recursive: true });
+    writeFileSync(
+      join(tmpDir, "flow.slang"),
+      `flow "test" {
+  agent A {
+    stake greet("hello") -> @out
+    commit
+  }
+  converge when: all_committed
+}`,
+    );
+  });
+
+  afterEach(() => {
+    if (existsSync(tmpDir)) rmSync(tmpDir, { recursive: true });
+  });
+
+  it("hides round-by-round output by default", () => {
+    const out = run(["run", "flow.slang", "--adapter", "echo"], tmpDir);
+    assert.ok(!out.includes("═══ ROUND"));
+    assert.ok(!out.includes("--- A ---"));
+    assert.ok(!out.includes("Operation:"));
+    // Final result is always shown
+    assert.ok(out.includes("FLOW CONVERGED"));
+    assert.ok(out.includes("─── RESULT ───"));
+  });
+
+  it("shows round-by-round output with --debug", () => {
+    const out = run(["run", "flow.slang", "--adapter", "echo", "--debug"], tmpDir);
+    assert.ok(out.includes("═══ ROUND"));
+    assert.ok(out.includes("--- A ---"));
+    assert.ok(out.includes("FLOW CONVERGED"));
+    assert.ok(out.includes("─── RESULT ───"));
+  });
+
+  it("shows committed agent outputs in result section", () => {
+    const out = run(["run", "flow.slang", "--adapter", "echo"], tmpDir);
+    assert.ok(out.includes("─── A ───"));
+    assert.ok(out.includes("A: committed ✓"));
+  });
+});
+

@@ -20,7 +20,7 @@ import {
 
 function printUsage(): void {
   console.log(`
-  slang — SLANG interpreter v0.6.5
+  slang — SLANG interpreter v0.6.6
 
   USAGE:
     slang init [dir]               Scaffold a new SLANG project
@@ -36,6 +36,7 @@ function printUsage(): void {
     --api-key <key>                     API key (or set via .env file)
     --tools <file.js|file.ts>           JS/TS file exporting tool handlers (default export)
     --deliverers <file.js|file.ts>      JS/TS file exporting deliver handlers (default export)
+    --debug                             Show full round-by-round agent output
     --port <number>                     Playground server port (default: 5174)
 
   ENVIRONMENT:
@@ -147,44 +148,66 @@ const COLORS = {
   red: "\x1b[31m",
 };
 
-function eventHandler(event: RuntimeEvent): void {
-  switch (event.type) {
-    case "round_start":
-      console.log(`\n${COLORS.bold}${COLORS.blue}═══ ROUND ${event.round} ═══${COLORS.reset}`);
-      break;
-    case "agent_start":
-      console.log(`\n${COLORS.cyan}--- ${event.agent} ---${COLORS.reset}`);
-      console.log(`${COLORS.dim}Operation: ${event.operation}${COLORS.reset}`);
-      break;
-    case "agent_output":
-      console.log(`\n${event.output}`);
-      break;
-    case "agent_commit":
-      console.log(`${COLORS.green}✓ ${event.agent} COMMITTED${COLORS.reset}`);
-      break;
-    case "agent_escalate":
-      console.log(`${COLORS.yellow}↑ ${event.agent} ESCALATED to @${event.target}${event.reason ? `: ${event.reason}` : ""}${COLORS.reset}`);
-      break;
-    case "flow_converged":
-      console.log(`\n${COLORS.bold}${COLORS.green}═══ FLOW CONVERGED ═══${COLORS.reset}`);
-      break;
-    case "flow_budget_exceeded":
-      console.log(`\n${COLORS.bold}${COLORS.yellow}═══ BUDGET EXCEEDED (round ${event.round}) ═══${COLORS.reset}`);
-      break;
-    case "flow_deadlock":
-      console.log(`\n${COLORS.bold}${COLORS.red}═══ DEADLOCK: ${event.agents.join(", ")} ═══${COLORS.reset}`);
-      break;
-    case "flow_escalated":
-      console.log(`\n${COLORS.bold}${COLORS.yellow}═══ ESCALATED TO @${event.target} ═══${COLORS.reset}`);
-      if (event.reason) console.log(`Reason: ${event.reason}`);
-      break;
-    case "tool_call":
-      console.log(`${COLORS.magenta}🔧 ${event.agent} → ${event.tool}(${JSON.stringify(event.args)})${COLORS.reset}`);
-      break;
-    case "tool_result":
-      console.log(`${COLORS.dim}   ← ${event.result.slice(0, 200)}${COLORS.reset}`);
-      break;
-  }
+function createEventHandler(debug: boolean): (event: RuntimeEvent) => void {
+  return (event: RuntimeEvent) => {
+    switch (event.type) {
+      case "round_start":
+        if (debug) {
+          console.log(`\n${COLORS.bold}${COLORS.blue}═══ ROUND ${event.round} ═══${COLORS.reset}`);
+        } else {
+          process.stdout.write(`\r${COLORS.dim}⏳ Round ${event.round}...${COLORS.reset}`);
+        }
+        break;
+      case "agent_start":
+        if (debug) {
+          console.log(`\n${COLORS.cyan}--- ${event.agent} ---${COLORS.reset}`);
+          console.log(`${COLORS.dim}Operation: ${event.operation}${COLORS.reset}`);
+        }
+        break;
+      case "agent_output":
+        if (debug) {
+          console.log(`\n${event.output}`);
+        }
+        break;
+      case "agent_commit":
+        if (debug) {
+          console.log(`${COLORS.green}✓ ${event.agent} COMMITTED${COLORS.reset}`);
+        }
+        break;
+      case "agent_escalate":
+        if (debug) {
+          console.log(`${COLORS.yellow}↑ ${event.agent} ESCALATED to @${event.target}${event.reason ? `: ${event.reason}` : ""}${COLORS.reset}`);
+        }
+        break;
+      case "flow_converged":
+        if (!debug) process.stdout.write("\r\x1b[K");
+        console.log(`\n${COLORS.bold}${COLORS.green}═══ FLOW CONVERGED ═══${COLORS.reset}`);
+        break;
+      case "flow_budget_exceeded":
+        if (!debug) process.stdout.write("\r\x1b[K");
+        console.log(`\n${COLORS.bold}${COLORS.yellow}═══ BUDGET EXCEEDED (round ${event.round}) ═══${COLORS.reset}`);
+        break;
+      case "flow_deadlock":
+        if (!debug) process.stdout.write("\r\x1b[K");
+        console.log(`\n${COLORS.bold}${COLORS.red}═══ DEADLOCK: ${event.agents.join(", ")} ═══${COLORS.reset}`);
+        break;
+      case "flow_escalated":
+        if (!debug) process.stdout.write("\r\x1b[K");
+        console.log(`\n${COLORS.bold}${COLORS.yellow}═══ ESCALATED TO @${event.target} ═══${COLORS.reset}`);
+        if (event.reason) console.log(`Reason: ${event.reason}`);
+        break;
+      case "tool_call":
+        if (debug) {
+          console.log(`${COLORS.magenta}🔧 ${event.agent} → ${event.tool}(${JSON.stringify(event.args)})${COLORS.reset}`);
+        }
+        break;
+      case "tool_result":
+        if (debug) {
+          console.log(`${COLORS.dim}   ← ${event.result.slice(0, 200)}${COLORS.reset}`);
+        }
+        break;
+    }
+  };
 }
 
 function printFlowResult(state: FlowState): void {
@@ -196,6 +219,19 @@ function printFlowResult(state: FlowState): void {
   for (const [name, agent] of state.agents) {
     console.log(`  ${name}: ${agent.status}${agent.committed ? " ✓" : ""}`);
   }
+
+  // Show committed agent outputs
+  const committedWithOutput = [...state.agents.entries()].filter(
+    ([, a]) => a.committed && a.output != null
+  );
+  if (committedWithOutput.length > 0) {
+    for (const [name, agent] of committedWithOutput) {
+      console.log(`\n${COLORS.bold}─── ${name} ───${COLORS.reset}`);
+      console.log(typeof agent.output === "string" ? agent.output : JSON.stringify(agent.output, null, 2));
+    }
+  }
+
+  // Show explicit @out outputs (if any)
   if (state.outputs.length > 0) {
     console.log(`\n${COLORS.bold}─── OUTPUTS ───${COLORS.reset}`);
     for (const output of state.outputs) {
@@ -398,8 +434,9 @@ async function cmdRun(args: Record<string, string>): Promise<void> {
   const adapter = getAdapter(args);
   const tools = args["tools"] ? await loadTools(args["tools"]) : undefined;
   const deliverers = args["deliverers"] ? await loadDeliverers(args["deliverers"]) : undefined;
+  const debug = args["debug"] === "true";
 
-  console.log(`${COLORS.bold}SLANG v0.6.5${COLORS.reset} — running ${file} with ${(adapter as any).name ?? args["adapter"] ?? "echo"}`);
+  console.log(`${COLORS.bold}SLANG v0.6.6${COLORS.reset} — running ${file} with ${(adapter as any).name ?? args["adapter"] ?? "echo"}`);
   if (tools) {
     console.log(`${COLORS.dim}Tools loaded: ${Object.keys(tools).join(", ")}${COLORS.reset}`);
   }
@@ -407,7 +444,7 @@ async function cmdRun(args: Record<string, string>): Promise<void> {
     console.log(`${COLORS.dim}Deliverers loaded: ${Object.keys(deliverers).join(", ")}${COLORS.reset}`);
   }
 
-  const state = await runFlow(source, { adapter, tools, deliverers, onEvent: eventHandler });
+  const state = await runFlow(source, { adapter, tools, deliverers, onEvent: createEventHandler(debug) });
   printFlowResult(state);
 }
 

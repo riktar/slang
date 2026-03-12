@@ -1,6 +1,6 @@
 # SLANG — Super Language for Agent Negotiation & Governance
 
-## Specification v0.6.5
+## Specification v0.6.6
 
 ---
 
@@ -905,3 +905,15 @@ Supported variables:
 | `OPENAI_API_KEY` | OpenAI API key |
 | `ANTHROPIC_API_KEY` | Anthropic API key |
 | `OPENROUTER_API_KEY` | OpenRouter API key |
+
+### 10.3 Output Modes
+
+By default, the CLI runs in **silent mode**: round-by-round agent outputs are hidden, only a progress indicator and the final result are shown. This keeps the terminal clean for production use.
+
+To enable **debug mode** with full round-by-round output (round headers, agent operations, LLM responses, tool calls), pass `--debug`:
+
+```bash
+slang run flow.slang --adapter openrouter --debug
+```
+
+The final result section (status, rounds, tokens, agent outputs) is always displayed regardless of mode.
