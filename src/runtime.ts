@@ -297,7 +297,26 @@ async function executeFlow(flow: FlowDecl, options: RuntimeOptions): Promise<Flo
   {
     // Execute deliver statements
     if (deliverStmts.length > 0 && deliverers) {
-      const flowOutput = state.outputs.length > 0 ? state.outputs[state.outputs.length - 1] : undefined;
+      // Collect flow output: prefer explicit @out outputs, fallback to last committed agent output
+      let flowOutput: unknown;
+      if (state.outputs.length > 0) {
+        flowOutput = state.outputs[state.outputs.length - 1];
+      } else {
+        // Build a map of all committed agent outputs
+        const committedOutputs: Record<string, unknown> = {};
+        for (const [name, agentState] of state.agents) {
+          if (agentState.committed && agentState.output != null) {
+            committedOutputs[name] = agentState.output;
+          }
+        }
+        const keys = Object.keys(committedOutputs);
+        if (keys.length === 1) {
+          flowOutput = committedOutputs[keys[0]!];
+        } else if (keys.length > 1) {
+          flowOutput = committedOutputs;
+        }
+      }
+
       for (const deliver of deliverStmts) {
         const handler = deliverers[deliver.call.name];
         if (handler) {
@@ -308,7 +327,15 @@ async function executeFlow(flow: FlowDecl, options: RuntimeOptions): Promise<Flo
             if (val.type === "StringLit") args[key] = val.value;
             else if (val.type === "NumberLit") args[key] = val.value;
             else if (val.type === "BoolLit") args[key] = val.value;
-            else if (val.type === "Ident") args[key] = val.name;
+            else if (val.type === "Ident") {
+              // Resolve ident: check agent outputs, then fallback to the name string
+              const agentState = state.agents.get(val.name);
+              if (agentState && agentState.output != null) {
+                args[key] = agentState.output;
+              } else {
+                args[key] = flowOutput;
+              }
+            }
           }
           onEvent?.({ type: "deliver", handler: deliver.call.name, args });
           await handler(flowOutput, args);

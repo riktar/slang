@@ -1383,5 +1383,65 @@ describe("Runtime", () => {
       assert.equal(state.status, "converged");
       assert.deepEqual(delivered, ["present"]);
     });
+
+    it("resolves flowOutput from committed agents when no @out target", async () => {
+      let receivedOutput: unknown;
+      let receivedArgs: Record<string, unknown> = {};
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            stake greet("hello") -> @B
+            await reply <- @B
+            commit
+          }
+          agent B {
+            await msg <- @A
+            stake respond(msg) -> @A
+            commit
+          }
+          deliver: my_handler(A)
+          converge when: all_committed
+        }
+      `, {
+        adapter: createEchoAdapter(),
+        deliverers: {
+          my_handler: async (output, args) => { receivedOutput = output; receivedArgs = args; },
+        },
+      });
+
+      assert.equal(state.status, "converged");
+      // flowOutput should be a map of both agents' outputs since both committed
+      assert.ok(typeof receivedOutput === "object" && receivedOutput !== null);
+      // Ident arg "A" should resolve to agent A's output
+      assert.ok(receivedArgs["arg0"] !== undefined);
+      assert.ok(typeof receivedArgs["arg0"] === "string");
+    });
+
+    it("resolves flowOutput from single committed agent", async () => {
+      let receivedOutput: unknown;
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            stake greet("hello") -> @B
+            commit
+          }
+          agent B {
+            await msg <- @A
+          }
+          deliver: my_handler()
+          converge when: all_committed
+          budget: rounds(2)
+        }
+      `, {
+        adapter: createEchoAdapter(),
+        deliverers: {
+          my_handler: async (output) => { receivedOutput = output; },
+        },
+      });
+
+      // Only agent A committed, so flowOutput should be its output directly
+      assert.ok(receivedOutput !== undefined);
+      assert.ok(typeof receivedOutput === "string");
+    });
   });
 });

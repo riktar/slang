@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.5]
+
+### Fixed
+
+- **Deliver output resolution** — `deliver:` handlers now receive actual agent output instead of `undefined`. When no agent stakes to `@out`, the flow collects committed agents' outputs as the deliver payload (single agent → its output directly, multiple agents → a `{ AgentName: output }` map).
+- **Deliver ident args resolve to agent output** — identifier arguments in `deliver: handler(AgentName)` now resolve to the named agent's committed output instead of passing the agent name as a plain string.
+
 ## [0.6.4]
 
 ### Fixed
