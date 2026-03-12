@@ -20,7 +20,7 @@ import {
 
 function printUsage(): void {
   console.log(`
-  slang — SLANG interpreter v0.6.3
+  slang — SLANG interpreter v0.6.4
 
   USAGE:
     slang init [dir]               Scaffold a new SLANG project
@@ -57,10 +57,20 @@ function parseArgs(args: string[]): Record<string, string> {
   const result: Record<string, string> = {};
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!;
-    if (arg.startsWith("--") && i + 1 < args.length) {
-      result[arg.slice(2)] = args[i + 1]!;
-      i++;
-    } else if (!arg.startsWith("--")) {
+    if (arg.startsWith("--")) {
+      const eqIdx = arg.indexOf("=");
+      if (eqIdx !== -1) {
+        // --key=value
+        result[arg.slice(2, eqIdx)] = arg.slice(eqIdx + 1);
+      } else if (i + 1 < args.length && !args[i + 1]!.startsWith("--")) {
+        // --key value
+        result[arg.slice(2)] = args[i + 1]!;
+        i++;
+      } else {
+        // --flag (boolean)
+        result[arg.slice(2)] = "true";
+      }
+    } else {
       if (!result["_cmd"]) result["_cmd"] = arg;
       else if (!result["_file"]) result["_file"] = arg;
     }
@@ -389,7 +399,7 @@ async function cmdRun(args: Record<string, string>): Promise<void> {
   const tools = args["tools"] ? await loadTools(args["tools"]) : undefined;
   const deliverers = args["deliverers"] ? await loadDeliverers(args["deliverers"]) : undefined;
 
-  console.log(`${COLORS.bold}SLANG v0.6.3${COLORS.reset} — running ${file} with ${(adapter as any).name ?? args["adapter"] ?? "echo"}`);
+  console.log(`${COLORS.bold}SLANG v0.6.4${COLORS.reset} — running ${file} with ${(adapter as any).name ?? args["adapter"] ?? "echo"}`);
   if (tools) {
     console.log(`${COLORS.dim}Tools loaded: ${Object.keys(tools).join(", ")}${COLORS.reset}`);
   }

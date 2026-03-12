@@ -197,5 +197,14 @@ export default {
     const out = run(["run", "simple.slang", "--adapter", "echo", "--deliverers", "deliverers.js"], tmpDir);
     assert.ok(out.includes("FLOW CONVERGED") || out.includes("converged"));
   });
+
+  it("supports --deliverers=file.js (equals syntax)", () => {
+    writeFileSync(
+      join(tmpDir, "deliverers.js"),
+      `export default { my_handler() {} };`,
+    );
+    const out = run(["run", "flow.slang", "--adapter", "echo", "--deliverers=deliverers.js"], tmpDir);
+    assert.ok(out.includes("Deliverers loaded") || out.includes("my_handler"));
+  });
 });
 
