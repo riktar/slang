@@ -1,5 +1,10 @@
 -- Flow composition with import
 -- Features: import ... as, count on await, orchestration of multiple sub-flows
+-- Run with: slang run composition.slang --adapter openrouter --api-key $OPENROUTER_API_KEY
+--
+-- Import other .slang files as sub-flows and run them within
+-- a parent flow. The Orchestrator launches two sub-flows,
+-- and the Compiler awaits both results before producing output.
 
 flow "full-report" {
   import "research" as research_flow
