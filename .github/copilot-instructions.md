@@ -16,7 +16,7 @@ After making changes to the codebase, update the following artifacts (if necessa
 - **Examples**: Add or update examples in the `examples/` directory
 - **Changelog**: Update the changelog
 - **Version**: Bump the version in `package.json` if applicable
-- **IDE Support**: Ensure the feature is supported in IDEs (see [IDE_SUPPORT.md](./IDE_SUPPORT.md))
+- **IDE Support**: Ensure the feature is supported in IDEs (see [docs/IDE.md](../docs/IDE.md))
 
 ---
 

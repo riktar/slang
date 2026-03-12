@@ -10,11 +10,11 @@
   <a href="#two-ways-to-use-slang">How it works</a> •
   <a href="#quick-start">Quick Start</a> •
   <a href="#why-slang">Why SLANG</a> •
-  <a href="#ide-support">IDE Support</a> •
-  <a href="#playground">Playground</a> •
-  <a href="#cli">CLI</a> •
-  <a href="#api">API</a> •
-  <a href="#mcp-server">MCP</a> •
+  <a href="docs/IDE.md">IDE Support</a> •
+  <a href="docs/PLAYGROUND.md">Playground</a> •
+  <a href="docs/CLI.md">CLI</a> •
+  <a href="docs/API.md">API</a> •
+  <a href="docs/MCP.md">MCP</a> •
   <a href="SPEC.md">Spec</a> •
   <a href="GRAMMAR.md">Grammar</a>
 </p>
@@ -224,345 +224,31 @@ SLANG isn't trying to replace SDKs. Like SQL didn't replace Java. It's a differe
 
 ## IDE Support
 
-SLANG has first-class editor support. Syntax highlighting, real-time diagnostics, autocompletion, go-to-definition, hover docs.
-
-### VS Code
-
-Install the **SLANG** extension from the Marketplace, or from `.vsix`:
-
-```bash
-cd packages/vscode-slang
-npm run build
-npx vsce package
-code --install-extension vscode-slang-0.7.0.vsix
-```
-
-You get:
-- **Syntax highlighting** — keywords, primitives, `@AgentRef`, strings, operators, comments
-- **Real-time diagnostics** — parse errors, unknown agent references, deadlock detection, missing converge/budget warnings
-- **Autocompletion** — keywords, `@AgentName` refs, meta keys
-- **Go-to-definition** — click `@AgentName` → jumps to agent declaration
-- **Hover** — keyword docs, agent info summary
-- **Document outline** — flows → agents → operations
-- **18 snippets** — `flow`, `agent`, `stake`, `await`, `commit`, `when-else`, `repeat`, `budget`, `converge`, `deliver`, and more
-
-### Any LSP-compatible editor (Neovim, Emacs, Helix, Zed, etc.)
-
-The SLANG LSP server works with any editor that supports the Language Server Protocol:
-
-```bash
-npm install -g @riktar/slang-lsp
-```
-
-Then configure your editor to use `slang-lsp` as the language server for `.slang` files (stdio transport).
-
-<details>
-<summary>Neovim (nvim-lspconfig)</summary>
-
-```lua
-vim.api.nvim_create_autocmd("FileType", {
-  pattern = "slang",
-  callback = function()
-    vim.lsp.start({
-      name = "slang-lsp",
-      cmd = { "slang-lsp" },
-      root_dir = vim.fn.getcwd(),
-    })
-  end,
-})
-```
-
-</details>
-
-<details>
-<summary>Helix (~/.config/helix/languages.toml)</summary>
-
-```toml
-[[language]]
-name = "slang"
-scope = "source.slang"
-file-types = ["slang"]
-language-servers = ["slang-lsp"]
-comment-token = "--"
-
-[language-server.slang-lsp]
-command = "slang-lsp"
-```
-
-</details>
-
-### Vim/Neovim (syntax only, no LSP)
-
-Copy the syntax files from `editors/vim/`:
-
-```bash
-cp editors/vim/syntax/slang.vim ~/.vim/syntax/
-cp editors/vim/ftdetect/slang.vim ~/.vim/ftdetect/
-```
-
-### Sublime Text
-
-Copy the syntax file to your Sublime packages:
-
-```bash
-cp editors/sublime/slang.sublime-syntax ~/Library/Application\ Support/Sublime\ Text/Packages/User/
-# Linux: ~/.config/sublime-text/Packages/User/
-```
-
-### JetBrains (IntelliJ, WebStorm, PyCharm, etc.)
-
-1. Go to **Settings → Editor → TextMate Bundles**
-2. Click **+** and select `editors/jetbrains/` from this repository
-3. Restart the IDE
-
-Full setup instructions: [IDE_SUPPORT.md](IDE_SUPPORT.md)
+See [docs/IDE.md](docs/IDE.md) for VS Code, Neovim, Vim, Sublime, JetBrains, and other LSP-compatible editors.
 
 ---
 
 ## Playground
 
-Built-in web editor. No API key needed.
-
-```bash
-slang playground              # Opens http://localhost:5174
-slang playground --port 3000  # custom port
-```
-
-- **Editor**: write and see parsing errors in real-time
-- **Dependency graph**: visualize flow as SVG (green = ready, yellow = waiting, red = stuck)
-- **AST viewer**: inspect the parsed syntax tree
-- **Run panel**: execute flows with the echo adapter, watch live events
-- **Examples**: built-in samples to learn from
+See [docs/PLAYGROUND.md](docs/PLAYGROUND.md) for web editor features and usage.
 
 ---
 
 ## CLI
 
-```bash
-slang init [dir]             # Scaffold a new project
-slang run <file.slang>       # Execute a flow
-slang parse <file.slang>     # Dump AST
-slang check <file.slang>     # Dependency analysis + deadlock detection
-slang prompt                 # Print the zero-setup system prompt
-slang playground             # Launch the web playground
-```
-
-### Options
-
-| Flag | Description |
-|------|-------------|
-| `--adapter` | `openai`, `anthropic`, `openrouter`, `echo` |
-| `--api-key` | Your API key (or use `.env`) |
-| `--model` | Override model (e.g. `gpt-4o`) |
-| `--base-url` | Custom endpoint (Ollama, local models) |
-| `--tools` | JS file with tool handlers (see [`examples/tools.js`](examples/tools.js)) |
-| `--deliverers` | JS file with deliver handlers (post-convergence side effects) |
-| `--debug` | Show full round-by-round agent output (silent by default) |
-| `--port` | Playground port (default `5174`) |
-
-### `.env` support
-
-The CLI loads a `.env` file from the current directory automatically:
-
-```env
-SLANG_ADAPTER=openrouter
-OPENROUTER_API_KEY=sk-or-...
-SLANG_MODEL=openai/gpt-4o
-```
-
-`slang init` creates a `.env.example` template. System environment variables override `.env` if both exist.
+See [docs/CLI.md](docs/CLI.md) for all commands, options, and environment variables.
 
 ---
 
 ## API
 
-SLANG is also a TypeScript/JavaScript library:
-
-```typescript
-import { parse, runFlow, createOpenAIAdapter } from '@riktar/slang'
-
-const source = `
-  flow "hello" {
-    agent Greeter {
-      stake greet("world") -> @out
-      commit
-    }
-    converge when: all_committed
-  }
-`
-
-const ast = parse(source)
-
-const state = await runFlow(source, {
-  adapter: createOpenAIAdapter({ apiKey: process.env.OPENAI_API_KEY }),
-  onEvent: (event) => console.log(event),
-})
-```
-
-### Adapters
-
-```typescript
-import {
-  createOpenAIAdapter,       // OpenAI / Ollama / any OpenAI-compatible
-  createAnthropicAdapter,    // Anthropic
-  createOpenRouterAdapter,   // OpenRouter (300+ models, one API key)
-  createSamplingAdapter,     // MCP host delegation (no API key)
-  createEchoAdapter,         // Testing
-  createRouterAdapter,       // Multi-provider: different agents → different backends
-} from '@riktar/slang'
-```
-
-### Functional Tools
-
-Turn agent `tools:` declarations into real handlers:
-
-```javascript
-// tools.js
-export default {
-  async web_search(args) {
-    const res = await fetch(`https://api.search.com?q=${encodeURIComponent(args.query)}`);
-    return await res.text();
-  },
-};
-```
-
-```bash
-slang run research.slang --adapter openrouter --tools tools.js
-```
-
-Or via the API:
-
-```typescript
-const state = await runFlow(source, {
-  adapter,
-  tools: {
-    web_search: async (args) => fetchSearchResults(args.query as string),
-  },
-})
-```
-
-See [`examples/tools.js`](examples/tools.js) for template code with `web_search` and `code_exec`.
-
-### Checkpoint & Resume
-
-```typescript
-import { runFlow, serializeFlowState, deserializeFlowState } from '@riktar/slang'
-
-const state = await runFlow(source, {
-  adapter,
-  checkpoint: async (snapshot) => {
-    await writeFile('checkpoint.json', serializeFlowState(snapshot))
-  },
-})
-
-// Later: resume from checkpoint
-const saved = deserializeFlowState(await readFile('checkpoint.json', 'utf8'))
-const resumed = await runFlow(source, { adapter, resumeFrom: saved })
-```
-
-### Deliver & onConverge
-
-Execute side effects after convergence using `deliver:` in the `.slang` file and `deliverers` in runtime options:
-
-```slang
-flow "report" {
-  agent Writer {
-    stake write(topic: "AI") -> @out
-    commit
-  }
-  deliver: save_file(path: "report.md")
-  deliver: webhook(url: "https://hooks.example.com/done")
-  converge when: all_committed
-}
-```
-
-```typescript
-const state = await runFlow(source, {
-  adapter,
-  deliverers: {
-    save_file: async (output, args) => {
-      await writeFile(args.path as string, String(output))
-    },
-    webhook: async (output, args) => {
-      await fetch(args.url as string, { method: 'POST', body: JSON.stringify(output) })
-    },
-  },
-  onConverge: async (finalState) => {
-    console.log(`Converged in ${finalState.round} rounds`)
-  },
-})
-```
-
-See [`examples/finalizer.slang`](examples/finalizer.slang) for the Finalizer pattern.
-
-CLI usage:
-
-```bash
-slang run report.slang --adapter openrouter --deliverers deliverers.js
-```
-
-The `deliverers.js` file follows the same pattern as `tools.js` — default-export an object where each key is a handler name and each value is `async (output, args) => void`:
-
-```js
-// deliverers.js
-export default {
-  async save_file(output, args) {
-    await writeFile(args.path, String(output))
-  },
-  async webhook(output, args) {
-    await fetch(args.url, { method: 'POST', body: JSON.stringify(output) })
-  },
-}
-```
-
-### Static Analysis & Error Handling
-
-```typescript
-import { parse, resolveDeps, detectDeadlocks, analyzeFlow, parseWithRecovery } from '@riktar/slang'
-
-// Deadlock detection
-const graph = resolveDeps(parse(source).flows[0])
-const deadlocks = detectDeadlocks(graph)
-
-// Collect all errors instead of failing on first
-const { program, errors } = parseWithRecovery(source)
-// errors[0].code → "P201", errors[0].line → 3, errors[0].toJSON() → { code, message, line, column }
-```
-
-Error codes follow a convention: L1xx (lexer), P2xx (parser), R3xx (resolver), E4xx (runtime). All errors include line/column and human-friendly messages with source context.
+See [docs/API.md](docs/API.md) for programmatic usage, adapters, tools, and checkpointing.
 
 ---
 
 ## MCP Server
 
-Built-in [Model Context Protocol](https://modelcontextprotocol.io/) server. No API key needed - delegates calls back to the host.
-
-```bash
-claude mcp add slang -- npx --package @riktar/slang slang-mcp
-```
-
-| Tool | What it does |
-|------|-------------|
-| `run_flow` | Execute a SLANG flow and return final state |
-| `parse_flow` | Parse source to AST JSON |
-| `check_flow` | Dependency graph + deadlock detection + diagnostics |
-| `get_zero_setup_prompt` | Get the zero-setup system prompt |
-
-<details>
-<summary>Claude Desktop config</summary>
-
-```json
-{
-  "mcpServers": {
-    "slang": {
-      "command": "npx",
-      "args": ["--package", "@riktar/slang", "slang-mcp"]
-    }
-  }
-}
-```
-
-</details>
+See [docs/MCP.md](docs/MCP.md) for Model Context Protocol integration with Claude Desktop.
 
 ---
 
@@ -586,26 +272,15 @@ Source → Lexer → Parser → AST → Resolver → Graph → Runtime → Resul
 
 ## Examples
 
-Check out the [`examples/`](examples/) folder for runnable flows covering every feature:
-
-| File | Pattern | Features |
-|------|---------|----------|
-| [`hello.slang`](examples/hello.slang) | Minimal output | Single agent, `stake → @out`, `commit` |
-| [`article.slang`](examples/article.slang) | Writer/Reviewer loop | `role`, `model`, `retry`, `when` blocks, `output` schema |
-| [`research.slang`](examples/research.slang) | Research with escalation | 3 providers, `tools`, `escalate @Human`, `if` conditions, `tokens` + `rounds` budget |
-| [`broadcast.slang`](examples/broadcast.slang) | Parallel broadcast | `@all` broadcast, `*` wildcard source, coordinator pattern |
-| [`code-review.slang`](examples/code-review.slang) | Code review | `tools: [code_exec]`, structured `output` on multiple stakes, review loop |
-| [`composition.slang`](examples/composition.slang) | Flow composition | `import ... as`, `count:` on await, orchestration |
-| [`iterative.slang`](examples/iterative.slang) | Iterative review | `let`/`set` variables, `when`/`else`, `repeat until` |
-| [`local-stake.slang`](examples/local-stake.slang) | Local stake | `let = stake` chaining, single-agent multi-step |
-| [`finalizer.slang`](examples/finalizer.slang) | Finalizer pattern | `deliver:` post-convergence, side effects, webhooks |
-| [`tools.js`](examples/tools.js) | Tool handlers | `web_search` and `code_exec` stubs for `--tools` flag |
+Examples are in the [`examples/`](examples/) folder. Each demonstrates different patterns and features:
 
 ```bash
-slang run examples/hello.slang
+slang run examples/hello.slang                                     # Minimal flow
 slang run examples/research.slang --adapter openrouter --tools examples/tools.js
-slang check examples/broadcast.slang
+slang check examples/broadcast.slang                               # Dependency analysis
 ```
+
+See each `.slang` file for inline documentation.
 
 ## Contributing
 

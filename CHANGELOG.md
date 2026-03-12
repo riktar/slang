@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Documentation restructuring** — moved detailed guides to `docs/` folder for improved organization:
+  - `docs/IDE.md` — IDE & editor support (VS Code, Neovim, Vim, Sublime, JetBrains, LSP)
+  - `docs/PLAYGROUND.md` — web editor features and usage
+  - `docs/CLI.md` — command-line interface, commands, options, and environment variables
+  - `docs/API.md` — programmatic usage, adapters, tools, checkpoint & resume, static analysis
+  - `docs/MCP.md` — Model Context Protocol integration with Claude Desktop
+- **README.md** — streamlined with focus on core content; links to detailed docs in `docs/` folder
+- **Examples section** — reduced to essentials, pointing to the `examples/` folder with quick launch commands
+- Updated [copilot-instructions.md](.github/copilot-instructions.md) to reference new docs location
+
 ## [0.7.1] — Local Stake
 
 ### Added
@@ -45,7 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Vim/Neovim**: syntax file (`editors/vim/syntax/slang.vim`) + filetype detection (`editors/vim/ftdetect/slang.vim`)
   - **Sublime Text**: `.sublime-syntax` definition (`editors/sublime/slang.sublime-syntax`)
   - **JetBrains**: TextMate bundle ready for import (`editors/jetbrains/`)
-- **IDE documentation** — new [IDE_SUPPORT.md](IDE_SUPPORT.md) with setup instructions for all editors
+- **IDE documentation** — new [docs/IDE.md](docs/IDE.md) with setup instructions for all editors
 - Monorepo workspace support via npm workspaces (`packages/slang-lsp`, `packages/vscode-slang`)
 - New build scripts: `build:lsp`, `build:vscode`, `build:all`
 
