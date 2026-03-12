@@ -1444,4 +1444,124 @@ describe("Runtime", () => {
       assert.ok(typeof receivedOutput === "string");
     });
   });
+
+  // ─── v0.7.1: Local Stake ───
+
+  describe("Local Stake (stake without recipient)", () => {
+    it("runs local stake and stores result in agent output", async () => {
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            stake research(topic: "AI")
+            commit
+          }
+          converge when: all_committed
+          budget: rounds(2)
+        }
+      `, { adapter: createEchoAdapter() });
+
+      assert.equal(state.status, "converged");
+      const agent = state.agents.get("A")!;
+      assert.ok(agent.output);
+      // No outputs to @out since no recipient
+      assert.equal(state.outputs.length, 0);
+    });
+
+    it("let = stake stores result in variable", async () => {
+      const events: RuntimeEvent[] = [];
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            let article = stake write(topic: "AI safety")
+            stake publish(article) -> @out
+            commit
+          }
+          converge when: all_committed
+          budget: rounds(3)
+        }
+      `, {
+        adapter: createEchoAdapter(),
+        onEvent: (e) => events.push(e),
+      });
+
+      assert.equal(state.status, "converged");
+      const agent = state.agents.get("A")!;
+      // Variable 'article' should be set
+      assert.ok(agent.variables["article"] !== undefined);
+      // Should have an output to @out from the second stake
+      assert.ok(state.outputs.length > 0);
+    });
+
+    it("set = stake updates existing variable", async () => {
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            let draft = "initial"
+            set draft = stake revise(draft)
+            stake publish(draft) -> @out
+            commit
+          }
+          converge when: all_committed
+          budget: rounds(5)
+        }
+      `, { adapter: createEchoAdapter() });
+
+      assert.equal(state.status, "converged");
+      const agent = state.agents.get("A")!;
+      // Variable 'draft' should have been updated from "initial" to the stake result
+      assert.ok(agent.variables["draft"] !== undefined);
+      assert.notEqual(agent.variables["draft"], "initial");
+    });
+
+    it("let = stake with recipient both stores and sends", async () => {
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            let result = stake analyze(data: "test") -> @B
+            commit
+          }
+          agent B {
+            await analysis <- @A
+            commit
+          }
+          converge when: all_committed
+          budget: rounds(3)
+        }
+      `, { adapter: createEchoAdapter() });
+
+      assert.equal(state.status, "converged");
+      const agentA = state.agents.get("A")!;
+      // Variable 'result' should be set
+      assert.ok(agentA.variables["result"] !== undefined);
+      // Agent B should have received the data
+      const agentB = state.agents.get("B")!;
+      assert.ok(agentB.committed);
+    });
+
+    it("chains multiple local stakes", async () => {
+      const adapter = createSequenceAdapter([
+        "research data about AI",
+        "summary of AI research",
+        "published article",
+      ]);
+      const state = await runFlow(`
+        flow "t" {
+          agent Writer {
+            let data = stake research(topic: "AI")
+            let summary = stake summarize(data)
+            stake publish(summary) -> @out
+            commit
+          }
+          converge when: all_committed
+          budget: rounds(5)
+        }
+      `, { adapter });
+
+      assert.equal(state.status, "converged");
+      const agent = state.agents.get("Writer")!;
+      assert.ok(agent.variables["data"]);
+      assert.ok(agent.variables["summary"]);
+      assert.ok(state.outputs.length > 0);
+    });
+  });
 });

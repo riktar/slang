@@ -66,6 +66,8 @@ export interface StakeOp extends BaseNode {
   recipients: Recipient[];
   condition?: Expr;
   output?: OutputSchema;
+  /** When set, the stake result is stored in this agent-local variable (from `let x = stake ...` or `set x = stake ...`). */
+  binding?: string;
 }
 
 export interface OutputSchema {

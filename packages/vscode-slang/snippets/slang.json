@@ -42,6 +42,13 @@
     ],
     "description": "Produce & send to target agent"
   },
+  "Stake local": {
+    "prefix": "stake-local",
+    "body": [
+      "let ${1:result} = stake ${2:func}(${3:args})"
+    ],
+    "description": "Local stake — execute and store result in variable"
+  },
   "Stake with output": {
     "prefix": "stake-output",
     "body": [

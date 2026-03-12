@@ -922,4 +922,122 @@ describe("Parser", () => {
       assert.equal(deliver.call.args.length, 0);
     });
   });
+
+  // ─── v0.7.1: Local Stake (stake without recipient) ───
+
+  describe("Local Stake", () => {
+    it("parses stake without recipient (no arrow)", () => {
+      const op = firstOp<StakeOp>(`
+        flow "t" {
+          agent A {
+            stake research(topic: "AI safety")
+            commit
+          }
+        }
+      `, "StakeOp");
+      assert.equal(op.call.name, "research");
+      assert.equal(op.recipients.length, 0);
+      assert.equal(op.binding, undefined);
+    });
+
+    it("parses let = stake (binding stake)", () => {
+      const op = firstOp<StakeOp>(`
+        flow "t" {
+          agent A {
+            let article = stake write(topic: "AI safety")
+            commit
+          }
+        }
+      `, "StakeOp");
+      assert.equal(op.call.name, "write");
+      assert.equal(op.binding, "article");
+      assert.equal(op.recipients.length, 0);
+    });
+
+    it("parses set = stake (binding stake)", () => {
+      const agent = firstAgent(`
+        flow "t" {
+          agent A {
+            let draft = "initial"
+            set draft = stake revise(draft)
+            commit
+          }
+        }
+      `);
+      assert.equal(agent.operations.length, 3);
+      assert.equal(agent.operations[0]!.type, "LetOp");
+      const stakeOp = agent.operations[1] as StakeOp;
+      assert.equal(stakeOp.type, "StakeOp");
+      assert.equal(stakeOp.call.name, "revise");
+      assert.equal(stakeOp.binding, "draft");
+      assert.equal(stakeOp.recipients.length, 0);
+    });
+
+    it("parses let = stake with recipient", () => {
+      const op = firstOp<StakeOp>(`
+        flow "t" {
+          agent A {
+            let result = stake analyze(data) -> @out
+            commit
+          }
+        }
+      `, "StakeOp");
+      assert.equal(op.call.name, "analyze");
+      assert.equal(op.binding, "result");
+      assert.equal(op.recipients.length, 1);
+      assert.equal(op.recipients[0]!.ref, "out");
+    });
+
+    it("parses let = stake with output schema", () => {
+      const op = firstOp<StakeOp>(`
+        flow "t" {
+          agent A {
+            let review = stake evaluate(draft) -> @Writer
+              output: { approved: "boolean", score: "number" }
+            commit
+          }
+        }
+      `, "StakeOp");
+      assert.equal(op.binding, "review");
+      assert.ok(op.output);
+      assert.equal(op.output!.fields.length, 2);
+    });
+
+    it("parses stake without recipient with condition", () => {
+      const op = firstOp<StakeOp>(`
+        flow "t" {
+          agent A {
+            stake process(data) if ready
+            commit
+          }
+        }
+      `, "StakeOp");
+      assert.equal(op.recipients.length, 0);
+      assert.ok(op.condition);
+      assert.equal((op.condition as Ident).name, "ready");
+    });
+
+    it("parses multiple local stakes in sequence", () => {
+      const agent = firstAgent(`
+        flow "t" {
+          agent A {
+            let data = stake research(topic: "AI")
+            let summary = stake summarize(data)
+            stake publish(summary) -> @out
+            commit
+          }
+        }
+      `);
+      assert.equal(agent.operations.length, 4);
+      const stake1 = agent.operations[0] as StakeOp;
+      assert.equal(stake1.binding, "data");
+      assert.equal(stake1.recipients.length, 0);
+      const stake2 = agent.operations[1] as StakeOp;
+      assert.equal(stake2.binding, "summary");
+      assert.equal(stake2.recipients.length, 0);
+      const stake3 = agent.operations[2] as StakeOp;
+      assert.equal(stake3.binding, undefined);
+      assert.equal(stake3.recipients.length, 1);
+    });
+  });
 });

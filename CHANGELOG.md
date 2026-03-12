@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] — Local Stake
+
+### Added
+
+- **Local stake** — `stake` without `-> @Target` executes locally, storing the result in the agent's output without sending to the mailbox
+  - `stake func(args)` — execute LLM call, result stored in agent output only
+  - `let var = stake func(args)` — execute and store result in a new variable
+  - `set var = stake func(args)` — execute and update an existing variable
+  - `let var = stake func(args) -> @Target` — both store locally and send to recipient
+  - Enables chaining multiple LLM calls within a single agent without `await`
+- New AST field: `StakeOp.binding` (optional variable name for binding stake results)
+- New example: [`examples/local-stake.slang`](examples/local-stake.slang) — single-agent multi-step pattern
+- 12 new tests (245 total)
+
+### Changed
+
+- `StakeOp` recipients list is now optional (empty array = local execution)
+- Parser accepts `stake func(args)` without `->` (no longer requires `-> @recipient`)
+- `GRAMMAR.md`, `SPEC.md`, `ZERO_SETUP_PROMPT.md` updated with local stake syntax and semantics
+
 ## [0.7.0] — Language Server Protocol & IDE Support
 
 ### Added

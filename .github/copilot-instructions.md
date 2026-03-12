@@ -15,6 +15,8 @@ After making changes to the codebase, update the following artifacts (if necessa
 - **Readme**: Update [README.md](../README.md) relavant sections if the feature can be "selled" to other user
 - **Examples**: Add or update examples in the `examples/` directory
 - **Changelog**: Update the changelog
+- **Version**: Bump the version in `package.json` if applicable
+- **IDE Support**: Ensure the feature is supported in IDEs (see [IDE_SUPPORT.md](./IDE_SUPPORT.md))
 
 ---
 

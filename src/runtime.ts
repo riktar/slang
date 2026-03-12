@@ -446,6 +446,11 @@ async function executeStake(
       agentState.status = "idle";
       onEvent?.({ type: "agent_output", agent: agentDecl.name, output: response.content });
 
+      // Store in variable if binding (let/set x = stake ...)
+      if (op.binding) {
+        agentState.variables[op.binding] = response.content;
+      }
+
       // Deliver to mailbox
       for (const recipient of op.recipients) {
         if (recipient.ref === "out") {

@@ -1,6 +1,6 @@
 # SLANG — Super Language for Agent Negotiation & Governance
 
-## Specification v0.7.0
+## Specification v0.7.1
 
 ---
 
@@ -68,12 +68,12 @@ agent Researcher {
 #### `stake` — Produce & Send
 
 ```slang
-stake <function>(<args...>) -> @<recipient>
+stake <function>(<args...>) [-> @<recipient>]
   [output: { field: "type", ... }]
 ```
 
 - Executes `function` with the given arguments
-- Sends the result to `recipient`
+- Sends the result to `recipient` (if specified)
 - The function name is a **semantic label**, not a code reference — it tells the LLM *what* to do
 - Arguments can be literals, references to previous data, or natural language descriptions
 - The optional `output:` block declares a **structured output contract** — the runtime injects the schema into the LLM prompt, ensuring the response contains a JSON object with the specified fields
@@ -88,9 +88,35 @@ Broadcast:
 stake announce(result) -> @all
 ```
 
-No recipient (output to flow):
+Output to flow:
 ```slang
 stake summarize(findings) -> @out
+```
+
+Local execution (no recipient):
+```slang
+stake research(topic: "AI safety")
+```
+
+When `->` is omitted, the stake executes locally — the LLM is called and the result is stored in the agent's output, but nothing is sent to the mailbox or flow output. This is useful for intermediate computations.
+
+The result of a stake (with or without recipient) can be captured into a variable using `let` or `set`:
+
+```slang
+let article = stake write(topic: "AI security")
+set draft = stake revise(draft, feedback)
+let result = stake analyze(data) -> @out
+```
+
+When a binding is used, the LLM response is stored in the named variable *and* delivered to any specified recipients. This enables chaining multiple LLM calls within a single agent without needing `await`:
+
+```slang
+agent Writer {
+  let data = stake research(topic: "AI safety")
+  let summary = stake summarize(data)
+  stake publish(summary) -> @out
+  commit
+}
 ```
 
 #### `await` — Receive & Depend
@@ -207,16 +233,19 @@ The else block executes when the `when` condition is false. Without `else`, a fa
 
 ```slang
 let name = expression
+let name = stake func(args)       -- execute & store
 ```
 
 Declares a new agent-local variable. Variables are scoped to the agent that declares them and persist across rounds.
 
+When used with `stake`, the LLM call is executed and the result is stored in the variable:
+
 ```slang
-agent Tracker {
-  let summary = "initial"
-  let attempts = 0
-  let ready = false
-  ...
+agent Writer {
+  let data = stake research(topic: "AI")
+  let summary = stake summarize(data)
+  stake publish(summary) -> @out
+  commit
 }
 ```
 
@@ -224,6 +253,7 @@ agent Tracker {
 
 ```slang
 set name = expression
+set name = stake func(args)       -- execute & update
 ```
 
 Updates an existing variable's value.
@@ -232,6 +262,7 @@ Updates an existing variable's value.
 set attempts = 3
 set summary = result.text
 set ready = true
+set draft = stake revise(draft, notes)   -- re-generate via LLM
 ```
 
 Variables are resolved before bindings (from `await`) in expression evaluation. This means a variable and a binding with the same name will resolve to the variable value.

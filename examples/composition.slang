@@ -18,7 +18,6 @@ flow "full-report" {
   agent Compiler {
     await results <- @Orchestrator (count: 2)
     stake compile(results, format: "executive briefing") -> @out
-    commit
   }
 
   converge when: all_committed

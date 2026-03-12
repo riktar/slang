@@ -1,7 +1,7 @@
 # SLANG Language Playbook
 
 > Complete syntax reference, formal grammar, and annotated examples for  
-> **SLANG v0.7.0** — Super Language for Agent Negotiation & Governance.
+> **SLANG v0.7.1** — Super Language for Agent Negotiation & Governance.
 
 ---
 
@@ -43,6 +43,8 @@ flow "name" {
     set var = value               -- update local variable
 
     stake func(args) -> @Target   -- produce & send
+    stake func(args)              -- local execution (no recipient)
+    let var = stake func(args)    -- execute & store result in variable
       output: { key: "type" }     -- optional: structured output contract
     await binding <- @Source      -- wait for input
     commit [value] [if cond]      -- accept & stop
@@ -233,12 +235,27 @@ SLANG has exactly three primitives. Everything else is syntactic sugar.
 ### 5.1 `stake` — Produce & Send
 
 ```slang
-stake <function>(<args...>) -> <recipients> [if <cond>]
+stake <function>(<args...>) [-> <recipients>] [if <cond>]
   [output: { field: "type", ... }]
 ```
 
 Executes a semantic function and delivers the result to one or more recipients.
 The function name is a **semantic label** — it tells the LLM *what* to do, not a code reference.
+
+The `-> <recipients>` part is **optional**. When omitted, the stake executes locally — the result is stored in the agent's output but not sent to any other agent or the flow. This is useful for intermediate computations within an agent.
+
+The result of a local stake can be captured into a variable:
+
+```slang
+let result = stake func(args)
+set result = stake func(args)
+```
+
+This also works with recipients — the result is both stored locally and sent:
+
+```slang
+let result = stake analyze(data) -> @Reviewer
+```
 
 The optional `output:` block declares a **structured output contract**. The runtime injects the schema into the LLM prompt, forcing the response to include a JSON object with the specified fields. Field types can be `"string"`, `"number"`, or `"boolean"`.
 
@@ -247,6 +264,23 @@ The optional `output:` block declares a **structured output contract**. The runt
 ```slang
 -- Basic: single recipient
 stake gather(topic: "AI trends") -> @Analyst
+
+-- Local execution (no recipient)
+stake research(topic: "AI safety")
+
+-- Capture result in variable
+let article = stake write(topic: "AI trends")
+
+-- Capture and send
+let result = stake analyze(data) -> @out
+
+-- Update variable with stake result
+set draft = stake revise(draft, feedback)
+
+-- Chain local stakes
+let data = stake research(topic: "AI")
+let summary = stake summarize(data)
+stake publish(summary) -> @out
 
 -- Multiple recipients
 stake analyze(data) -> @Critic, @Logger
@@ -402,16 +436,20 @@ The else block executes when the `when` condition is false. Without `else`, a fa
 
 ```slang
 let name = expression
+let name = stake func(args)       -- execute stake & store result
 ```
 
 Declares a new agent-local variable. Variables are scoped to the agent that declares them and persist across rounds.
+
+When used with `stake`, the LLM call is executed and the result is stored in the variable (see [stake — Produce & Send](#51-stake--produce--send)).
 
 ```slang
 agent Tracker {
   let summary = "initial"
   let attempts = 0
   let ready = false
-  stake process(summary) -> @out
+  let data = stake research(topic: "AI")
+  stake process(data) -> @out
   commit
 }
 ```
@@ -420,6 +458,7 @@ agent Tracker {
 
 ```slang
 set name = expression
+set name = stake func(args)       -- execute stake & update variable
 ```
 
 Updates the value of a previously declared variable.
@@ -428,6 +467,7 @@ Updates the value of a previously declared variable.
 let msg = "hello"
 set msg = "updated"
 set msg = result.text
+set msg = stake rewrite(msg)      -- re-generate via LLM
 ```
 
 **Resolution order:** Variables are checked before `await` bindings during expression evaluation.
@@ -780,7 +820,7 @@ retry_decl      = "retry" ":" NUMBER ;
 operation       = stake_op | await_op | commit_op | escalate_op | when_block
                 | let_op | set_op | repeat_block ;
 
-stake_op        = "stake" func_call "->" recipient_list [ condition ] [ output_schema ] ;
+stake_op        = [ ( "let" | "set" ) IDENT "=" ] "stake" func_call [ "->" recipient_list ] [ condition ] [ output_schema ] ;
 
 output_schema   = "output" ":" "{" output_field { "," output_field } "}" ;
 output_field    = IDENT ":" STRING ;
@@ -795,9 +835,9 @@ when_block      = "when" expression "{" { operation } "}" [ else_block ] ;
 
 else_block      = ( "else" | "otherwise" ) "{" { operation } "}" ;
 
-let_op          = "let" IDENT "=" expression ;
+let_op          = "let" IDENT "=" expression ;       (* see also stake_op for let = stake *)
 
-set_op          = "set" IDENT "=" expression ;
+set_op          = "set" IDENT "=" expression ;       (* see also stake_op for set = stake *)
 
 repeat_block    = "repeat" "until" expression "{" { operation } "}" ;
 

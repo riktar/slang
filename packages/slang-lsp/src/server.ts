@@ -161,7 +161,7 @@ connection.onCompletion((params: TextDocumentPositionParams): CompletionItem[] =
     const keywords = [
       { label: "flow", kind: CompletionItemKind.Keyword, detail: "Declare a flow" },
       { label: "agent", kind: CompletionItemKind.Keyword, detail: "Declare an agent" },
-      { label: "stake", kind: CompletionItemKind.Keyword, detail: "Produce & send" },
+      { label: "stake", kind: CompletionItemKind.Keyword, detail: "Produce & send (or execute locally)" },
       { label: "await", kind: CompletionItemKind.Keyword, detail: "Wait for input" },
       { label: "commit", kind: CompletionItemKind.Keyword, detail: "Accept & stop" },
       { label: "escalate", kind: CompletionItemKind.Keyword, detail: "Delegate upward" },
@@ -263,7 +263,7 @@ connection.onHover((params: TextDocumentPositionParams): Hover | null => {
   // Hover on keywords
   const word = getWordAtOffset(text, offset);
   const keywordDocs: Record<string, string> = {
-    stake: "**stake** — Produce content and send it to recipient agents.\n\n`stake func(args) -> @Target`",
+    stake: "**stake** — Produce content and send to recipients, or execute locally.\n\n`stake func(args) -> @Target`\n`stake func(args)` (local)\n`let var = stake func(args)`",
     await: "**await** — Block until data arrives from a source agent.\n\n`await binding <- @Source`",
     commit: "**commit** — Accept the result and stop this agent.\n\n`commit [value] [if condition]`",
     escalate: "**escalate** — Reject and delegate to another agent.\n\n`escalate @Target [reason: \"...\"] [if condition]`",
@@ -274,8 +274,8 @@ connection.onHover((params: TextDocumentPositionParams): Hover | null => {
     deliver: "**deliver** — Post-convergence side effect.\n\n`deliver: handler(args)`",
     when: "**when** — Conditional execution block.\n\n`when condition { ... } else { ... }`",
     repeat: "**repeat** — Loop until a condition is met.\n\n`repeat until condition { ... }`",
-    let: "**let** — Declare a local variable.\n\n`let name = value`",
-    set: "**set** — Update a local variable.\n\n`set name = value`",
+    let: "**let** — Declare a local variable.\n\n`let name = value`\n`let name = stake func(args)` (execute & store)",
+    set: "**set** — Update a local variable.\n\n`set name = value`\n`set name = stake func(args)` (execute & update)",
   };
   if (word && keywordDocs[word]) {
     return { contents: { kind: "markdown", value: keywordDocs[word] } };

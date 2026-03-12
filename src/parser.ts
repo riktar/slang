@@ -238,8 +238,20 @@ class Parser {
       case TokenType.Commit: return this.parseCommitOp();
       case TokenType.Escalate: return this.parseEscalateOp();
       case TokenType.When: return this.parseWhenBlock();
-      case TokenType.Let: return this.parseLetOp();
-      case TokenType.Set: return this.parseSetOp();
+      case TokenType.Let:
+        if (this.tokens[this.pos + 1]?.type === TokenType.Ident &&
+            this.tokens[this.pos + 2]?.type === TokenType.Eq &&
+            this.tokens[this.pos + 3]?.type === TokenType.Stake) {
+          return this.parseBindingStakeOp();
+        }
+        return this.parseLetOp();
+      case TokenType.Set:
+        if (this.tokens[this.pos + 1]?.type === TokenType.Ident &&
+            this.tokens[this.pos + 2]?.type === TokenType.Eq &&
+            this.tokens[this.pos + 3]?.type === TokenType.Stake) {
+          return this.parseBindingStakeOp();
+        }
+        return this.parseSetOp();
       case TokenType.Repeat: return this.parseRepeatBlock();
       default: {
         const err = new ParseError(
@@ -261,8 +273,10 @@ class Parser {
   private parseStakeOp(): StakeOp {
     const start = this.expect(TokenType.Stake);
     const call = this.parseFuncCall();
-    this.expect(TokenType.Arrow);
-    const recipients = this.parseRecipientList();
+    let recipients: Recipient[] = [];
+    if (this.match(TokenType.Arrow)) {
+      recipients = this.parseRecipientList();
+    }
     const condition = this.parseOptionalCondition();
     const output = this.parseOptionalOutput();
     return { type: "StakeOp", call, recipients, condition, output, span: this.spanFrom(start) };
@@ -437,6 +451,18 @@ class Parser {
     }
 
     return { type: "WhenBlock", condition, body, elseBlock, span: this.spanFrom(start, end) };
+  }
+
+  // ─── Binding Stake (let/set x = stake ...) ───
+
+  private parseBindingStakeOp(): StakeOp {
+    const start = this.advance(); // consume let/set
+    const binding = this.expect(TokenType.Ident).value;
+    this.expect(TokenType.Eq);
+    const stakeOp = this.parseStakeOp();
+    stakeOp.binding = binding;
+    stakeOp.span = this.spanFrom(start);
+    return stakeOp;
   }
 
   // ─── Let / Set ───

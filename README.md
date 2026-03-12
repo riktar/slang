@@ -44,7 +44,7 @@ Everything else follows from these:
 
 | Primitive | What it does |
 |-----------|---------|
-| `stake` | Produce content and send it to another agent |
+| `stake` | Produce content and send it to another agent (or execute locally) |
 | `await` | Block until another agent sends you data |
 | `commit` | Accept the result and stop |
 
@@ -597,6 +597,7 @@ Check out the [`examples/`](examples/) folder for runnable flows covering every 
 | [`code-review.slang`](examples/code-review.slang) | Code review | `tools: [code_exec]`, structured `output` on multiple stakes, review loop |
 | [`composition.slang`](examples/composition.slang) | Flow composition | `import ... as`, `count:` on await, orchestration |
 | [`iterative.slang`](examples/iterative.slang) | Iterative review | `let`/`set` variables, `when`/`else`, `repeat until` |
+| [`local-stake.slang`](examples/local-stake.slang) | Local stake | `let = stake` chaining, single-agent multi-step |
 | [`finalizer.slang`](examples/finalizer.slang) | Finalizer pattern | `deliver:` post-convergence, side effects, webhooks |
 | [`tools.js`](examples/tools.js) | Tool handlers | `web_search` and `code_exec` stubs for `--tools` flag |
 
