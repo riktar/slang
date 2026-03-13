@@ -3,8 +3,8 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { resolve } from 'path';
 
-export default defineConfig({
-  base: '/slang/',
+export default defineConfig(({ command }) => ({
+  base: command === 'build' ? '/slang/' : '/',
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
@@ -14,4 +14,4 @@ export default defineConfig({
   server: {
     port: 5174,
   },
-});
+}));

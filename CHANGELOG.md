@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Examples section** — reduced to essentials, pointing to the `examples/` folder with quick launch commands
 - Updated [copilot-instructions.md](.github/copilot-instructions.md) to reference new docs location
 
+## [0.7.3] — Playground Deploy Fix
+
+### Fixed
+
+- **GitHub Pages deployment** — playground was not served; GitHub Pages rendered the README instead of the built playground app
+- Added `.nojekyll` to build output to prevent Jekyll processing
+- Fixed Vite `base` config to use `/slang/` only in production builds, `/` in dev mode
+
 ## [0.7.2] — Testing & Quality
 
 ### Added

@@ -2,7 +2,7 @@
   "name": "vscode-slang-super-language-for-agent-negotiation-governance",
   "displayName": "SLANG - Super Language for Agent Negotiation & Governance",
   "description": "Language support for SLANG — Super Language for Agent Negotiation & Governance",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "publisher": "riktar",
   "license": "MIT",
   "icon": "icon.png",
