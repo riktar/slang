@@ -1,6 +1,10 @@
 <h1 align="center">🗣️ SLANG</h1>
 
 <p align="center">
+  <img src="slang.png" alt="SLANG" width="200"/>
+</p>
+
+<p align="center">
   <strong>The SQL of AI agents.</strong><br/>
   A declarative meta-language for orchestrating multi-agent workflows.<br/>
   Readable by humans. Executable by LLMs. Portable across models.
