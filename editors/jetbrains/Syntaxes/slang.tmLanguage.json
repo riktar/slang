@@ -63,6 +63,10 @@
           "match": "\\b(converge|budget)\\b"
         },
         {
+          "name": "keyword.control.test.slang",
+          "match": "\\b(expect|contains)\\b"
+        },
+        {
           "name": "keyword.other.meta.slang",
           "match": "\\b(role|model|tools|tokens|rounds|time|count|reason|retry|output)\\b"
         },

@@ -7,7 +7,7 @@ import type {
   AgentDecl, AgentMeta, Operation, StakeOp, AwaitOp,
   CommitOp, EscalateOp, WhenBlock, ElseBlock, LetOp, SetOp, RepeatBlock,
   FuncCall, Argument,
-  Recipient, Source, ConvergeStmt, BudgetStmt, BudgetItem, DeliverStmt,
+  Recipient, Source, ConvergeStmt, BudgetStmt, BudgetItem, DeliverStmt, ExpectStmt,
   Expr, Span, Position, OutputSchema, OutputField,
 } from "./ast.js";
 
@@ -151,6 +151,9 @@ class Parser {
         case TokenType.Deliver:
           items.push(this.parseDeliverStmt());
           break;
+        case TokenType.Expect:
+          items.push(this.parseExpectStmt());
+          break;
         default: {
           const err = new ParseError(
             SlangErrorCode.P204,
@@ -159,7 +162,7 @@ class Parser {
           );
           if (!this.recovering) throw err;
           this.errors.push(err);
-          this.synchronize([TokenType.Import, TokenType.Agent, TokenType.Converge, TokenType.Budget, TokenType.Deliver, TokenType.RBrace]);
+          this.synchronize([TokenType.Import, TokenType.Agent, TokenType.Converge, TokenType.Budget, TokenType.Deliver, TokenType.Expect, TokenType.RBrace]);
           break;
         }
       }
@@ -552,6 +555,14 @@ class Parser {
     return { type: "DeliverStmt", call, span: this.spanFrom(start) };
   }
 
+  // ─── Expect ───
+
+  private parseExpectStmt(): ExpectStmt {
+    const start = this.expect(TokenType.Expect);
+    const expr = this.parseExpr();
+    return { type: "ExpectStmt", expr, span: this.spanFrom(start) };
+  }
+
   // ─── Expressions ───
 
   private parseExpr(): Expr {
@@ -591,11 +602,11 @@ class Parser {
   }
 
   private parseComparison(): Expr {
-    let left = this.parseAccess();
+    let left = this.parseContains();
     const compOps = [TokenType.Gt, TokenType.Gte, TokenType.Lt, TokenType.Lte, TokenType.EqEq, TokenType.Neq];
     if (compOps.includes(this.peek().type)) {
       const op = this.advance();
-      const right = this.parseAccess();
+      const right = this.parseContains();
       left = {
         type: "BinaryExpr",
         op: op.value as any,
@@ -607,10 +618,33 @@ class Parser {
     return left;
   }
 
+  private parseContains(): Expr {
+    let left = this.parseAccess();
+    if (this.check(TokenType.Contains)) {
+      const op = this.advance();
+      const right = this.parseAccess();
+      left = {
+        type: "BinaryExpr",
+        op: "contains",
+        left,
+        right,
+        span: this.spanFrom(op),
+      };
+    }
+    return left;
+  }
+
   private parseAccess(): Expr {
     let expr = this.parsePrimary();
     while (this.match(TokenType.Dot)) {
-      const prop = this.expect(TokenType.Ident).value;
+      // After a dot, accept identifiers AND keywords as property names
+      const t = this.peek();
+      let prop: string;
+      if (t.type === TokenType.Ident || this.isKeywordToken(t.type)) {
+        prop = this.advance().value;
+      } else {
+        prop = this.expect(TokenType.Ident).value;
+      }
       expr = {
         type: "DotAccess",
         object: expr,
@@ -619,6 +653,26 @@ class Parser {
       };
     }
     return expr;
+  }
+
+  private isKeywordToken(type: TokenType): boolean {
+    return type === TokenType.Output || type === TokenType.Role ||
+           type === TokenType.Model || type === TokenType.Tools ||
+           type === TokenType.Tokens || type === TokenType.Rounds ||
+           type === TokenType.Time || type === TokenType.Count ||
+           type === TokenType.Reason || type === TokenType.Retry ||
+           type === TokenType.Budget || type === TokenType.Commit ||
+           type === TokenType.Stake || type === TokenType.Await ||
+           type === TokenType.Agent || type === TokenType.Flow ||
+           type === TokenType.Deliver || type === TokenType.Expect ||
+           type === TokenType.Contains || type === TokenType.True ||
+           type === TokenType.False || type === TokenType.Set ||
+           type === TokenType.Let || type === TokenType.When ||
+           type === TokenType.If || type === TokenType.Else ||
+           type === TokenType.Otherwise || type === TokenType.Converge ||
+           type === TokenType.Import || type === TokenType.As ||
+           type === TokenType.Escalate || type === TokenType.Repeat ||
+           type === TokenType.Until;
   }
 
   private parsePrimary(): Expr {

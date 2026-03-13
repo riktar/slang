@@ -7,12 +7,13 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 import { createServer } from "node:http";
 import { parse } from "./parser.js";
 import { resolveDeps, detectDeadlocks } from "./resolver.js";
-import { runFlow, type RuntimeEvent, type FlowState, type ToolHandler, type DeliverHandler } from "./runtime.js";
+import { runFlow, testFlow, type RuntimeEvent, type FlowState, type ToolHandler, type DeliverHandler, type TestResult } from "./runtime.js";
 import {
   createOpenAIAdapter,
   createAnthropicAdapter,
   createOpenRouterAdapter,
   createEchoAdapter,
+  createMockAdapter,
   type LLMAdapter,
 } from "./adapter.js";
 
@@ -20,11 +21,12 @@ import {
 
 function printUsage(): void {
   console.log(`
-  slang — SLANG interpreter v0.7.0
+  slang — SLANG interpreter v0.7.2
 
   USAGE:
     slang init [dir]               Scaffold a new SLANG project
     slang run <file.slang>         Execute a SLANG flow with an LLM
+    slang test <file.slang>        Run a .slang file as a test (mock adapter + expect assertions)
     slang parse <file.slang>       Parse and show AST (dry run)
     slang check <file.slang>       Parse and check dependencies
     slang prompt                   Print the zero-setup system prompt
@@ -34,6 +36,7 @@ function printUsage(): void {
     --adapter <openai|anthropic|openrouter|echo>   LLM adapter (default: echo)
     --model <model-name>                Model override
     --api-key <key>                     API key (or set via .env file)
+    --mock <agent=response,...>          Mock responses for test (default: auto-generates)
     --tools <file.js|file.ts>           JS/TS file exporting tool handlers (default export)
     --deliverers <file.js|file.ts>      JS/TS file exporting deliver handlers (default export)
     --debug                             Show full round-by-round agent output
@@ -436,7 +439,7 @@ async function cmdRun(args: Record<string, string>): Promise<void> {
   const deliverers = args["deliverers"] ? await loadDeliverers(args["deliverers"]) : undefined;
   const debug = args["debug"] === "true";
 
-  console.log(`${COLORS.bold}SLANG v0.7.0${COLORS.reset} — running ${file} with ${(adapter as any).name ?? args["adapter"] ?? "echo"}`);
+  console.log(`${COLORS.bold}SLANG v0.7.2${COLORS.reset} — running ${file} with ${(adapter as any).name ?? args["adapter"] ?? "echo"}`);
   if (tools) {
     console.log(`${COLORS.dim}Tools loaded: ${Object.keys(tools).join(", ")}${COLORS.reset}`);
   }
@@ -503,6 +506,80 @@ function cmdPrompt(): void {
     console.log(content);
   } catch {
     console.error("Error: ZERO_SETUP_PROMPT.md not found");
+    process.exit(1);
+  }
+}
+
+// ─── Test Command ───
+
+function parseMockResponses(mockArg: string): Record<string, string> {
+  const responses: Record<string, string> = {};
+  for (const pair of mockArg.split(",")) {
+    const eqIdx = pair.indexOf("=");
+    if (eqIdx !== -1) {
+      const agent = pair.slice(0, eqIdx).trim();
+      const response = pair.slice(eqIdx + 1).trim();
+      responses[agent] = response;
+    }
+  }
+  return responses;
+}
+
+async function cmdTest(args: Record<string, string>): Promise<void> {
+  const file = args["_file"];
+  if (!file) {
+    console.error("Error: specify a .slang file");
+    process.exit(1);
+  }
+
+  const source = readSlangFile(file);
+  const debug = args["debug"] === "true";
+
+  // Build mock adapter
+  const mockResponses = args["mock"]
+    ? parseMockResponses(args["mock"])
+    : {};
+  const adapter = createMockAdapter({
+    responses: mockResponses,
+    defaultResponse: "[MOCK] Default test response\nCONFIDENCE: 0.9",
+  });
+
+  console.log(`${COLORS.bold}SLANG v0.7.2${COLORS.reset} — testing ${file}`);
+
+  const result = await testFlow(source, {
+    adapter,
+    onEvent: (event: RuntimeEvent) => {
+      if (debug) {
+        switch (event.type) {
+          case "round_start":
+            console.log(`\n${COLORS.dim}⏳ Round ${event.round}...${COLORS.reset}`);
+            break;
+          case "agent_output":
+            console.log(`${COLORS.dim}  ${event.agent}: ${event.output.slice(0, 100)}${COLORS.reset}`);
+            break;
+        }
+      }
+      if (event.type === "expect_pass") {
+        console.log(`  ${COLORS.green}✓${COLORS.reset} expect ${event.message} ${COLORS.dim}(line ${event.line})${COLORS.reset}`);
+      } else if (event.type === "expect_fail") {
+        console.log(`  ${COLORS.red}✗${COLORS.reset} expect ${event.message} ${COLORS.dim}(line ${event.line})${COLORS.reset}`);
+      }
+    },
+  });
+
+  console.log();
+  if (result.error) {
+    console.log(`${COLORS.red}ERROR${COLORS.reset}: ${result.error}`);
+    process.exit(1);
+  }
+
+  const passCount = result.assertions.filter((a) => a.passed).length;
+  const failCount = result.assertions.filter((a) => !a.passed).length;
+
+  if (result.passed) {
+    console.log(`${COLORS.bold}${COLORS.green}✓ ${passCount} assertion${passCount !== 1 ? "s" : ""} passed${COLORS.reset} — flow "${result.flowName}"`);
+  } else {
+    console.log(`${COLORS.bold}${COLORS.red}✗ ${failCount} failed${COLORS.reset}, ${passCount} passed — flow "${result.flowName}"`);
     process.exit(1);
   }
 }
@@ -577,6 +654,9 @@ async function main(): Promise<void> {
       break;
     case "run":
       await cmdRun(args);
+      break;
+    case "test":
+      await cmdTest(args);
       break;
     case "parse":
       cmdParse(args);

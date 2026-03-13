@@ -218,6 +218,42 @@ export function createEchoAdapter(): LLMAdapter {
   };
 }
 
+// ─── Mock Adapter (for deterministic testing) ───
+
+export interface MockAdapterConfig {
+  /** Map of agent name → canned response. The adapter inspects the system prompt for the agent name. */
+  responses: Record<string, string>;
+  /** Default response when no matching agent name is found */
+  defaultResponse?: string;
+}
+
+export function createMockAdapter(config: MockAdapterConfig): LLMAdapter {
+  const callCounts = new Map<string, number>();
+
+  return {
+    name: "mock/test",
+    async call(messages: LLMMessage[]): Promise<LLMResponse> {
+      const systemMsg = messages.find((m) => m.role === "system");
+      const agentMatch = systemMsg?.content.match(/You are agent "(\w+)"/);
+      const agentName = agentMatch?.[1] ?? "";
+
+      // Track call count per agent for sequenced responses
+      const count = callCounts.get(agentName) ?? 0;
+      callCounts.set(agentName, count + 1);
+
+      // Check for agent-specific response
+      const response = config.responses[agentName]
+        ?? config.defaultResponse
+        ?? `[MOCK] Response for ${agentName || "unknown"}`;
+
+      return {
+        content: response,
+        tokensUsed: 0,
+      };
+    },
+  };
+}
+
 // ─── Router Adapter ───
 // Routes LLM calls to different adapters based on model name patterns.
 // Enables multi-endpoint / multi-provider flows where each agent can

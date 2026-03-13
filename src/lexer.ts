@@ -41,6 +41,8 @@ export enum TokenType {
   Repeat = "repeat",
   Until = "until",
   Deliver = "deliver",
+  Expect = "expect",
+  Contains = "contains",
   True = "true",
   False = "false",
 
@@ -103,6 +105,8 @@ const KEYWORDS: Record<string, TokenType> = {
   repeat: TokenType.Repeat,
   until: TokenType.Until,
   deliver: TokenType.Deliver,
+  expect: TokenType.Expect,
+  contains: TokenType.Contains,
   true: TokenType.True,
   false: TokenType.False,
 };

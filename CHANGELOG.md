@@ -19,6 +19,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Examples section** — reduced to essentials, pointing to the `examples/` folder with quick launch commands
 - Updated [copilot-instructions.md](.github/copilot-instructions.md) to reference new docs location
 
+## [0.7.2] — Testing & Quality
+
+### Added
+
+- **`expect` statement** — flow-level test assertion, evaluated after flow execution
+  - `expect @Agent.output contains "text"` — string containment assertion
+  - `expect @Agent.committed == true` — equality assertion
+  - `expect @Agent.status == "committed"` — status assertion
+- **`contains` operator** — binary operator for string containment, usable in `expect` and `when` blocks
+- **Mock adapter** — `createMockAdapter({ responses, defaultResponse })` for deterministic, per-agent testing without LLM calls
+- **`testFlow()` function** — parses, executes with mock adapter, evaluates all `expect` statements, returns `TestResult`
+- **`slang test` CLI command** — native test runner for `.slang` files
+  - `slang test flow.slang` — run with default mock responses
+  - `slang test flow.slang --mock "Agent:response,Agent2:response2"` — custom per-agent mock responses
+- **Playground test integration** — auto-detects `expect` statements and uses `testFlow` with mock adapter when RUN is clicked
+- New runtime events: `expect_pass`, `expect_fail`
+- New error code: `E407` (Test assertion failed)
+- New example: [`examples/test-flow.slang`](examples/test-flow.slang) — testing pattern with assertions
+- 21 new tests (266 total)
+
 ## [0.7.1] — Local Stake
 
 ### Added

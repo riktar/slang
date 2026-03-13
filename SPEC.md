@@ -1,6 +1,6 @@
 # SLANG — Super Language for Agent Negotiation & Governance
 
-## Specification v0.7.1
+## Specification v0.7.2
 
 ---
 
@@ -735,6 +735,67 @@ A flow terminates when:
 
 A **round** is one full pass through all currently executable agents. The `budget: rounds(N)` constraint limits how many full passes occur. Within a round, independent agents run in parallel (see §5.2).
 
+### 5.12 Testing & Assertions
+
+SLANG has built-in support for testing flows via the `expect` statement and a mock adapter.
+
+#### `expect` Statement
+
+`expect` is a flow-level item (sibling of `agent`, `converge`, `budget`). It declares a boolean assertion that is evaluated after flow execution:
+
+```slang
+expect @Agent.output contains "expected"
+expect @Agent.committed == true
+```
+
+#### `contains` Operator
+
+The `contains` keyword is a binary operator that tests string containment. The left operand is converted to a string and checked for inclusion of the right operand:
+
+```slang
+expect @Writer.output contains "conclusion"
+when @Reviewer.output contains "approved" { commit }
+```
+
+#### Mock Adapter
+
+The mock adapter (`createMockAdapter`) provides deterministic, per-agent responses for testing. It inspects the system prompt for the agent name and returns the configured response:
+
+```typescript
+const adapter = createMockAdapter({
+  responses: {
+    Writer: "Hello world — conclusion reached",
+    Reviewer: "Approved",
+  },
+  defaultResponse: "ok",
+});
+```
+
+#### `testFlow` Function
+
+The `testFlow(source, options)` function parses a flow, runs it with a mock adapter, then evaluates all `expect` statements:
+
+```typescript
+const result = await testFlow(source, {
+  mockResponses: { Agent: "response" },
+});
+// result.passed: boolean
+// result.assertions: { passed, message, line, column }[]
+```
+
+#### CLI: `slang test`
+
+```bash
+slang test flow.slang
+slang test flow.slang --mock "Agent1:response1,Agent2:response2"
+```
+
+Runs the flow with a mock adapter and evaluates all `expect` statements. Exits with code 0 if all pass, 1 if any fail.
+
+#### Playground Integration
+
+When a flow contains `expect` statements, the playground automatically uses `testFlow` with a mock adapter when RUN is clicked, displaying test results alongside the flow output.
+
 ---
 
 ## 6. Reserved Words
@@ -743,7 +804,7 @@ A **round** is one full pass through all currently executable agents. The `budge
 flow, agent, stake, await, commit, escalate, import, as,
 when, if, else, otherwise, converge, budget, role, model, tools,
 tokens, rounds, time, count, reason, retry, output, deliver,
-let, set, repeat, until,
+let, set, repeat, until, expect, contains,
 true, false,
 @out, @all, @any, @Human
 ```
@@ -878,6 +939,7 @@ The SLANG toolchain uses a structured error code system. All errors carry a code
 | E404 | Tool handler not found |
 | E405 | Tool execution error |
 | E406 | All retries exhausted |
+| E407 | Test assertion failed |
 
 ### Error Recovery
 

@@ -36,6 +36,7 @@ export enum SlangErrorCode {
   E404 = "E404", // Tool handler not found
   E405 = "E405", // Tool execution error
   E406 = "E406", // Retries exhausted
+  E407 = "E407", // Test assertion failed
 }
 
 // ─── Error Messages ───
@@ -69,6 +70,7 @@ const ERROR_MESSAGES: Record<SlangErrorCode, string> = {
   [SlangErrorCode.E404]: "Tool `{tool}` was declared but no handler was provided in runtime options",
   [SlangErrorCode.E405]: "Tool `{tool}` execution failed: {message}",
   [SlangErrorCode.E406]: "All {max} retries exhausted for agent `{agent}`: {message}",
+  [SlangErrorCode.E407]: "Assertion failed: {message}",
 };
 
 // ─── Formatting ───

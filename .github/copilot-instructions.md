@@ -11,7 +11,7 @@ After making changes to the codebase, update the following artifacts (if necessa
 - **Tests**: Update or add tests in `src/**/*.test.ts` files
 - **Specification**: Update [SPEC.md](../SPEC.md) to reflect syntax or behavioral changes
 - **Grammar**: Update [GRAMMAR.md](../GRAMMAR.md) for any grammar/syntax modifications
-- **Documentation**: Update relevant docs and inline code comments
+- **Documentation**: Update relevant [docs/](../docs/) and inline code comments
 - **Readme**: Update [README.md](../README.md) relavant sections if the feature can be "selled" to other user
 - **Examples**: Add or update examples in the `examples/` directory
 - **Changelog**: Update the changelog

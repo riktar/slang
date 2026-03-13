@@ -21,6 +21,7 @@ contexts:
     - include: conditionals
     - include: loops
     - include: constraints
+    - include: testing
     - include: meta
     - include: variables
     - include: operators
@@ -83,6 +84,10 @@ contexts:
   constraints:
     - match: '\b(converge|budget)\b'
       scope: keyword.control.constraint.slang
+
+  testing:
+    - match: '\b(expect|contains)\b'
+      scope: keyword.control.test.slang
 
   meta:
     - match: '\b(role|model|tools|tokens|rounds|time|count|reason|retry|output)\b'

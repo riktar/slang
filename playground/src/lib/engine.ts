@@ -2,12 +2,12 @@
 import { tokenize } from "@slang/lexer.js";
 import { parse, parseWithRecovery, type ParseResult } from "@slang/parser.js";
 import { resolveDeps, detectDeadlocks, analyzeFlow, type DepGraph, type FlowDiagnostic } from "@slang/resolver.js";
-import { runFlow, type FlowState, type RuntimeEvent } from "@slang/runtime.js";
-import { createEchoAdapter } from "@slang/adapter.js";
+import { runFlow, testFlow, type FlowState, type RuntimeEvent, type TestResult, type AssertionResult } from "@slang/runtime.js";
+import { createEchoAdapter, createMockAdapter } from "@slang/adapter.js";
 import { SlangError } from "@slang/errors.js";
-import type { Program, FlowDecl, AgentDecl } from "@slang/ast.js";
+import type { Program, FlowDecl, AgentDecl, ExpectStmt } from "@slang/ast.js";
 
-export type { Program, FlowDecl, AgentDecl, DepGraph, FlowDiagnostic, FlowState, RuntimeEvent, ParseResult };
+export type { Program, FlowDecl, AgentDecl, DepGraph, FlowDiagnostic, FlowState, RuntimeEvent, ParseResult, TestResult, AssertionResult };
 export { SlangError };
 
 export interface AnalysisResult {
@@ -70,6 +70,8 @@ export interface RunResult {
   state: FlowState | null;
   events: RuntimeEvent[];
   error: string | null;
+  /** Test results — only present when flow contains `expect` statements */
+  testResult: TestResult | null;
 }
 
 export async function runSource(
@@ -77,7 +79,31 @@ export async function runSource(
   onEvent?: (event: RuntimeEvent) => void,
 ): Promise<RunResult> {
   const events: RuntimeEvent[] = [];
+
+  // Check if source contains expect statements → run as test
+  const hasExpect = sourceHasExpect(source);
+
   try {
+    if (hasExpect) {
+      const adapter = createMockAdapter({
+        responses: {},
+        defaultResponse: "[MOCK] Default test response\nCONFIDENCE: 0.9",
+      });
+      const result = await testFlow(source, {
+        adapter,
+        onEvent: (ev: RuntimeEvent) => {
+          events.push(ev);
+          onEvent?.(ev);
+        },
+      });
+      return {
+        state: result.state,
+        events,
+        error: result.error,
+        testResult: result,
+      };
+    }
+
     const state = await runFlow(source, {
       adapter: createEchoAdapter(),
       onEvent: (ev: RuntimeEvent) => {
@@ -85,13 +111,24 @@ export async function runSource(
         onEvent?.(ev);
       },
     });
-    return { state, events, error: null };
+    return { state, events, error: null, testResult: null };
   } catch (e) {
     return {
       state: null,
       events,
       error: e instanceof Error ? e.message : String(e),
+      testResult: null,
     };
+  }
+}
+
+function sourceHasExpect(source: string): boolean {
+  try {
+    const { program } = parseWithRecovery(source);
+    if (program.flows.length === 0) return false;
+    return program.flows[0]!.body.some((n): n is ExpectStmt => n.type === "ExpectStmt");
+  } catch {
+    return false;
   }
 }
 

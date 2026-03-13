@@ -9,7 +9,7 @@ import type { LLMAdapter, LLMMessage } from "./adapter.js";
 import type {
   FlowDecl, AgentDecl, Operation, StakeOp, AwaitOp,
   CommitOp, EscalateOp, WhenBlock, LetOp, SetOp, RepeatBlock,
-  FuncCall, Argument, DeliverStmt,
+  FuncCall, Argument, DeliverStmt, ExpectStmt,
   Expr, ConvergeStmt, BudgetStmt, BudgetItem,
 } from "./ast.js";
 
@@ -101,7 +101,9 @@ export type RuntimeEvent =
   | { type: "flow_converged"; outputs: unknown[] }
   | { type: "flow_budget_exceeded"; round: number }
   | { type: "flow_deadlock"; agents: string[] }
-  | { type: "flow_escalated"; target: string; reason?: string };
+  | { type: "flow_escalated"; target: string; reason?: string }
+  | { type: "expect_pass"; message: string; line: number; column: number }
+  | { type: "expect_fail"; message: string; line: number; column: number };
 
 // ─── Runtime ───
 
@@ -809,6 +811,7 @@ function resolveExprValue(expr: Expr, agentState: AgentState, flowState: FlowSta
         case "!=": return left !== right;
         case "&&": return left && right;
         case "||": return left || right;
+        case "contains": return String(left ?? "").includes(String(right ?? ""));
       }
     }
     case "ListLit": return expr.elements.map((e) => resolveExprValue(e, agentState, flowState));
@@ -891,6 +894,97 @@ function parseToolCall(content: string): { name: string; args: Record<string, un
     return { name, args };
   } catch {
     return { name, args: {} };
+  }
+}
+
+// ─── Test Runner ───
+
+export interface AssertionResult {
+  passed: boolean;
+  message: string;
+  line: number;
+  column: number;
+}
+
+export interface TestResult {
+  passed: boolean;
+  flowName: string;
+  assertions: AssertionResult[];
+  state: FlowState | null;
+  error: string | null;
+}
+
+export async function testFlow(source: string, options: RuntimeOptions): Promise<TestResult> {
+  let program;
+  try {
+    program = parse(source);
+  } catch (e) {
+    const error = e instanceof Error ? e.message : String(e);
+    return { passed: false, flowName: "", assertions: [], state: null, error };
+  }
+  if (program.flows.length === 0) {
+    return { passed: false, flowName: "", assertions: [], state: null, error: "No flow found in source" };
+  }
+
+  const flow = program.flows[0]!;
+  const expectStmts = flow.body.filter((n): n is ExpectStmt => n.type === "ExpectStmt");
+
+  let state: FlowState | null = null;
+  let error: string | null = null;
+  try {
+    state = await executeFlow(flow, options);
+  } catch (e) {
+    error = e instanceof Error ? e.message : String(e);
+    return { passed: false, flowName: flow.name, assertions: [], state: null, error };
+  }
+
+  // Evaluate expect statements against final flow state
+  const dummyAgent: AgentState = {
+    name: "_test",
+    status: "idle",
+    opIndex: 0,
+    output: undefined,
+    bindings: {},
+    committed: false,
+    variables: {},
+  };
+
+  const assertions: AssertionResult[] = [];
+  for (const expect of expectStmts) {
+    const value = resolveExprValue(expect.expr, dummyAgent, state);
+    const passed = !!value;
+    const message = formatExpectExpr(expect.expr);
+    assertions.push({
+      passed,
+      message,
+      line: expect.span.start.line,
+      column: expect.span.start.column,
+    });
+    if (passed) {
+      options.onEvent?.({ type: "expect_pass", message, line: expect.span.start.line, column: expect.span.start.column });
+    } else {
+      options.onEvent?.({ type: "expect_fail", message, line: expect.span.start.line, column: expect.span.start.column });
+    }
+  }
+
+  const allPassed = assertions.every((a) => a.passed);
+  return { passed: allPassed, flowName: flow.name, assertions, state, error: null };
+}
+
+function formatExpectExpr(expr: Expr): string {
+  switch (expr.type) {
+    case "BinaryExpr": {
+      const left = formatExpectExpr(expr.left);
+      const right = formatExpectExpr(expr.right);
+      return `${left} ${expr.op} ${right}`;
+    }
+    case "DotAccess": return `${formatExpectExpr(expr.object)}.${expr.property}`;
+    case "AgentRef": return `@${expr.name}`;
+    case "Ident": return expr.name;
+    case "StringLit": return `"${expr.value}"`;
+    case "NumberLit": return String(expr.value);
+    case "BoolLit": return String(expr.value);
+    case "ListLit": return `[${expr.elements.map(formatExpectExpr).join(", ")}]`;
   }
 }
 

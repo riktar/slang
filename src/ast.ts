@@ -30,7 +30,7 @@ export interface FlowDecl extends BaseNode {
   body: FlowBodyItem[];
 }
 
-export type FlowBodyItem = ImportStmt | AgentDecl | ConvergeStmt | BudgetStmt | DeliverStmt;
+export type FlowBodyItem = ImportStmt | AgentDecl | ConvergeStmt | BudgetStmt | DeliverStmt | ExpectStmt;
 
 // ─── Import ───
 
@@ -176,6 +176,13 @@ export interface DeliverStmt extends BaseNode {
   call: FuncCall;
 }
 
+// ─── Expect (Test Assertions) ───
+
+export interface ExpectStmt extends BaseNode {
+  type: "ExpectStmt";
+  expr: Expr;
+}
+
 // ─── Expressions ───
 
 export type Expr =
@@ -226,7 +233,7 @@ export interface DotAccess extends BaseNode {
 
 export interface BinaryExpr extends BaseNode {
   type: "BinaryExpr";
-  op: ">" | ">=" | "<" | "<=" | "==" | "!=" | "&&" | "||";
+  op: ">" | ">=" | "<" | "<=" | "==" | "!=" | "&&" | "||" | "contains";
   left: Expr;
   right: Expr;
 }

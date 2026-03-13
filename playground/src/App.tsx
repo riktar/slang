@@ -1,10 +1,26 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
+import Editor, { type OnMount, loader } from '@monaco-editor/react';
+import type * as monaco from 'monaco-editor';
 import { analyzeSource, runSource, buildGraphData, type AnalysisResult, type RunResult, type RuntimeEvent, type GraphNode, type GraphEdge } from './lib/engine';
 import { EXAMPLES } from './lib/examples';
 import { cn } from './lib/utils';
 import { Play, FileCode, GitFork, AlertTriangle, CheckCircle, XCircle, ChevronDown, Zap, RotateCcw } from 'lucide-react';
+import { SLANG_LANGUAGE_ID, languageConfiguration, monarchTokensProvider, SLANG_THEME } from './lib/slang-language';
+import { createCompletionProvider, createHoverProvider, computeMarkers } from './lib/slang-monaco';
 
 const DEFAULT_SOURCE = EXAMPLES.hello.source;
+
+// Register SLANG language with Monaco before it loads
+let languageRegistered = false;
+function registerSlangLanguage(monacoInstance: typeof monaco) {
+  if (languageRegistered) return;
+  languageRegistered = true;
+
+  monacoInstance.languages.register({ id: SLANG_LANGUAGE_ID, extensions: ['.slang'] });
+  monacoInstance.languages.setLanguageConfiguration(SLANG_LANGUAGE_ID, languageConfiguration);
+  monacoInstance.languages.setMonarchTokensProvider(SLANG_LANGUAGE_ID, monarchTokensProvider);
+  monacoInstance.editor.defineTheme('slang-dark', SLANG_THEME);
+}
 
 export default function App() {
   const [source, setSource] = useState(DEFAULT_SOURCE);
@@ -14,15 +30,55 @@ export default function App() {
   const [isRunning, setIsRunning] = useState(false);
   const [liveEvents, setLiveEvents] = useState<RuntimeEvent[]>([]);
   const [showExamples, setShowExamples] = useState(false);
-  const editorRef = useRef<HTMLTextAreaElement>(null);
+  const monacoRef = useRef<typeof monaco | null>(null);
+  const editorInstanceRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const sourceRef = useRef(source);
+  sourceRef.current = source;
 
-  const handleSourceChange = useCallback((value: string) => {
-    setSource(value);
+  const handleEditorWillMount = useCallback((monacoInstance: typeof monaco) => {
+    registerSlangLanguage(monacoInstance);
+  }, []);
+
+  const handleEditorDidMount: OnMount = useCallback((editor, monacoInstance) => {
+    monacoRef.current = monacoInstance;
+    editorInstanceRef.current = editor;
+
+    // Register completion & hover providers
+    monacoInstance.languages.registerCompletionItemProvider(
+      SLANG_LANGUAGE_ID,
+      createCompletionProvider(() => sourceRef.current),
+    );
+    monacoInstance.languages.registerHoverProvider(
+      SLANG_LANGUAGE_ID,
+      createHoverProvider(() => sourceRef.current),
+    );
+
+    // Initial markers
+    const model = editor.getModel();
+    if (model) {
+      monacoInstance.editor.setModelMarkers(model, 'slang', computeMarkers(source));
+    }
+
+    editor.focus();
+  }, [source]);
+
+  const handleSourceChange = useCallback((value: string | undefined) => {
+    const newValue = value ?? '';
+    setSource(newValue);
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      setAnalysis(analyzeSource(value));
-    }, 200);
+      const result = analyzeSource(newValue);
+      setAnalysis(result);
+
+      // Update Monaco markers
+      if (monacoRef.current && editorInstanceRef.current) {
+        const model = editorInstanceRef.current.getModel();
+        if (model) {
+          monacoRef.current.editor.setModelMarkers(model, 'slang', computeMarkers(newValue));
+        }
+      }
+    }, 300);
   }, []);
 
   const handleRun = useCallback(async () => {
@@ -116,13 +172,44 @@ export default function App() {
             {hasErrors && <XCircle className="w-3.5 h-3.5 text-red-500 ml-auto" />}
           </div>
           <div className="flex-1 relative">
-            <textarea
-              ref={editorRef}
+            <Editor
+              language={SLANG_LANGUAGE_ID}
+              theme="slang-dark"
               value={source}
-              onChange={(e) => handleSourceChange(e.target.value)}
-              spellCheck={false}
-              className="w-full h-full resize-none bg-zinc-950 text-zinc-100 font-mono text-sm p-4 focus:outline-none leading-6 whitespace-pre"
-              style={{ tabSize: 2 }}
+              onChange={handleSourceChange}
+              beforeMount={handleEditorWillMount}
+              onMount={handleEditorDidMount}
+              options={{
+                fontSize: 14,
+                fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, Monaco, 'Courier New', monospace",
+                fontLigatures: true,
+                minimap: { enabled: false },
+                lineNumbers: 'on',
+                renderLineHighlight: 'line',
+                scrollBeyondLastLine: false,
+                automaticLayout: true,
+                tabSize: 2,
+                insertSpaces: true,
+                bracketPairColorization: { enabled: true },
+                autoClosingBrackets: 'always',
+                autoClosingQuotes: 'always',
+                autoIndent: 'full',
+                formatOnPaste: true,
+                suggestOnTriggerCharacters: true,
+                wordBasedSuggestions: 'off',
+                quickSuggestions: true,
+                padding: { top: 12 },
+                overviewRulerLanes: 0,
+                hideCursorInOverviewRuler: true,
+                overviewRulerBorder: false,
+                scrollbar: {
+                  verticalScrollbarSize: 6,
+                  horizontalScrollbarSize: 6,
+                },
+                glyphMargin: false,
+                folding: true,
+                lineDecorationsWidth: 8,
+              }}
             />
           </div>
 

@@ -1,7 +1,7 @@
 # SLANG Language Playbook
 
 > Complete syntax reference, formal grammar, and annotated examples for  
-> **SLANG v0.7.1** — Super Language for Agent Negotiation & Governance.
+> **SLANG v0.7.2** — Super Language for Agent Negotiation & Governance.
 
 ---
 
@@ -24,8 +24,9 @@
 11. [Composition](#11-composition)
 12. [Expressions & Data Model](#12-expressions--data-model)
 13. [Execution Model](#13-execution-model)
-14. [Formal Grammar (EBNF)](#14-formal-grammar-ebnf)
-15. [Reserved Words](#15-reserved-words)
+14. [Testing & Assertions](#14-testing--assertions)
+15. [Formal Grammar (EBNF)](#15-formal-grammar-ebnf)
+16. [Reserved Words](#16-reserved-words)
 
 ---
 
@@ -64,6 +65,7 @@ flow "name" {
   converge when: condition        -- when does the flow end?
   budget: tokens(N), rounds(N)   -- hard resource limits
   deliver: handler(args)         -- post-convergence side effect
+  expect expr                    -- test assertion (used with slang test)
 }
 ```
 
@@ -642,6 +644,7 @@ feedback.approved     -- boolean property
 | `>` `>=` `<` `<=` | Numeric comparison |
 | `==` `!=` | Equality |
 | `&&` `\|\|` | Logical AND / OR |
+| `contains` | String containment |
 
 ### Function Arguments
 
@@ -772,7 +775,65 @@ Only tools declared in the agent's `tools:` metadata **and** provided in the run
 
 ---
 
-## 14. Formal Grammar (EBNF)
+## 14. Testing & Assertions
+
+### `expect` — Test Assertions
+
+The `expect` statement declares an assertion that is evaluated after flow execution. It is a flow-level item (sibling of `agent`, `converge`, `budget`).
+
+```slang
+expect @Agent.output contains "expected text"
+expect @Agent.committed == true
+expect @Agent.status == "committed"
+```
+
+### `contains` — String Containment
+
+The `contains` keyword is a binary operator that tests whether the left operand (converted to string) includes the right operand:
+
+```slang
+expect @Writer.output contains "conclusion"
+```
+
+`contains` can also be used in `when` blocks:
+
+```slang
+when @Reviewer.output contains "approved" {
+  commit
+}
+```
+
+### Test Execution
+
+Flows with `expect` statements are run using `slang test`:
+
+```bash
+slang test my-flow.slang
+slang test my-flow.slang --mock "Agent1:response1,Agent2:response2"
+```
+
+A **mock adapter** is used by default during testing to provide deterministic, canned responses per agent. This enables reproducible assertions without calling a real LLM.
+
+### Example
+
+```slang
+flow "greeting-test" {
+  agent Greeter {
+    stake greet("world") -> @out
+    commit
+  }
+
+  expect @Greeter.committed == true
+  expect @Greeter.output contains "hello"
+
+  converge when: all_committed
+  budget: rounds(1)
+}
+```
+
+---
+
+## 15. Formal Grammar (EBNF)
 
 ```ebnf
 (* Whitespace and comments *)
@@ -796,13 +857,16 @@ program         = { flow_decl } ;
 
 flow_decl       = "flow" STRING "{" flow_body "}" ;
 
-flow_body       = { import_stmt | agent_decl | converge_stmt | budget_stmt | deliver_stmt } ;
+flow_body       = { import_stmt | agent_decl | converge_stmt | budget_stmt | deliver_stmt | expect_stmt } ;
 
 (* Import *)
 import_stmt     = "import" STRING "as" IDENT ;
 
 (* Deliver *)
 deliver_stmt    = "deliver" ":" func_call ;
+
+(* Testing *)
+expect_stmt     = "expect" expression ;
 
 (* Agent *)
 agent_decl      = "agent" IDENT "{" agent_body "}" ;
@@ -871,9 +935,11 @@ budget_item     = ( "tokens" | "rounds" | "time" ) "(" expression ")" ;
 (* Expressions *)
 expression      = comparison ;
 
-comparison      = access [ comp_op access ] ;
+comparison      = containment [ comp_op containment ] ;
 
 comp_op         = ">" | ">=" | "<" | "<=" | "==" | "!=" | "&&" | "||" ;
+
+containment     = access [ "contains" access ] ;
 
 access          = primary { "." IDENT } ;
 
@@ -891,13 +957,13 @@ list_literal    = "[" [ expression { "," expression } ] "]" ;
 
 ---
 
-## 15. Reserved Words
+## 16. Reserved Words
 
 ```
 flow, agent, stake, await, commit, escalate, import, as,
 when, if, else, otherwise, converge, budget, role, model, tools,
 tokens, rounds, time, count, reason, retry, output, deliver,
-let, set, repeat, until,
+let, set, repeat, until, expect, contains,
 true, false,
 @out, @all, @any, @Human
 ```

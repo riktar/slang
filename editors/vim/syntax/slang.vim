@@ -34,6 +34,9 @@ syn keyword slangRepeat repeat until
 " ─── Constraint keywords ───
 syn keyword slangConstraint converge budget
 
+" ─── Testing keywords ───
+syn keyword slangTest expect contains
+
 " ─── Meta keywords ───
 syn keyword slangMeta role model tools tokens rounds time count reason retry output
 
@@ -66,6 +69,7 @@ hi def link slangStructure Structure
 hi def link slangConditional Conditional
 hi def link slangRepeat Repeat
 hi def link slangConstraint PreProc
+hi def link slangTest Keyword
 hi def link slangMeta Type
 hi def link slangVariable Statement
 hi def link slangAgentRef Identifier
