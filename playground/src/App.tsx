@@ -4,7 +4,7 @@ import type * as monaco from 'monaco-editor';
 import { analyzeSource, runSource, buildGraphData, type AnalysisResult, type RunResult, type RuntimeEvent, type GraphNode, type GraphEdge } from './lib/engine';
 import { EXAMPLES } from './lib/examples';
 import { cn } from './lib/utils';
-import { Play, FileCode, GitFork, AlertTriangle, CheckCircle, XCircle, ChevronDown, Zap, RotateCcw } from 'lucide-react';
+import { Play, FileCode, GitFork, AlertTriangle, CheckCircle, XCircle, ChevronDown, Zap, RotateCcw, Download, Github } from 'lucide-react';
 import { SLANG_LANGUAGE_ID, languageConfiguration, monarchTokensProvider, SLANG_THEME } from './lib/slang-language';
 import { createCompletionProvider, createHoverProvider, computeMarkers } from './lib/slang-monaco';
 
@@ -106,6 +106,16 @@ export default function App() {
     }
   }, []);
 
+  const handleSave = useCallback(() => {
+    const blob = new Blob([source], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'flow.slang';
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [source]);
+
   const graphData = analysis.graph ? buildGraphData(analysis.graph) : null;
   const hasErrors = analysis.errors.length > 0;
   const hasWarnings = analysis.diagnostics.filter(d => d.level === 'warning').length > 0;
@@ -116,12 +126,36 @@ export default function App() {
     <div className="h-screen flex flex-col">
       {/* Header */}
       <header className="flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-900/80 backdrop-blur shrink-0">
-        <div className="flex items-center gap-2">
-          <Zap className="w-5 h-5 text-amber-400" />
-          <h1 className="text-lg font-bold tracking-tight">SLANG Playground</h1>
-          <span className="text-xs text-zinc-500 font-mono">v0.4.0</span>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Zap className="w-5 h-5 text-amber-400" />
+            <h1 className="text-lg font-bold tracking-tight">SLANG Playground</h1>
+            <span className="text-xs text-zinc-500 font-mono">v0.7.4</span>
+          </div>
+          <span className="text-zinc-700 hidden sm:block">·</span>
+          <p className="text-xs text-zinc-500 hidden sm:block">
+            A declarative meta-language for orchestrating multi-agent workflows.
+          </p>
+          <a
+            href="https://github.com/riktar/slang"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+            title="View on GitHub"
+          >
+            <Github className="w-4 h-4" />
+            <span className="hidden md:inline">riktar/slang</span>
+          </a>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={handleSave}
+            className="flex items-center gap-1 px-3 py-1.5 text-sm bg-zinc-800 hover:bg-zinc-700 rounded-md transition-colors"
+            title="Save as flow.slang"
+          >
+            <Download className="w-4 h-4" />
+            <span className="hidden sm:inline">Save</span>
+          </button>
           <div className="relative">
             <button
               onClick={() => setShowExamples(!showExamples)}

@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Examples section** — reduced to essentials, pointing to the `examples/` folder with quick launch commands
 - Updated [copilot-instructions.md](.github/copilot-instructions.md) to reference new docs location
 
+## [0.7.4] — Playground CLI Fix
+
+### Fixed
+
+- **`slang playground` static server** — asset requests with `/slang/` base path prefix were not resolved correctly, causing MIME type errors (`text/html` instead of `application/javascript`)
+
 ## [0.7.3] — Playground Deploy Fix
 
 ### Fixed
