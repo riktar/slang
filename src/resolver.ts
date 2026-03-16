@@ -5,12 +5,14 @@ import type { FlowDecl, AgentDecl, Operation } from "./ast.js";
 
 export interface AgentDep {
   name: string;
-  /** agents this agent awaits data from before it can start */
+  /** agents this agent awaits data from (all awaits) */
   awaitsFrom: string[];
   /** agents this agent stakes output to */
   stakesTo: string[];
   /** true if the agent's first operation is NOT an await */
   isReady: boolean;
+  /** agents from the leading await sequence (before any stake/commit) — used for deadlock detection */
+  initialAwaitsFrom: string[];
 }
 
 export interface DepGraph {
@@ -28,13 +30,23 @@ export function resolveDeps(flow: FlowDecl): DepGraph {
   for (const agent of agentNodes) {
     const awaitsFrom: string[] = [];
     const stakesTo: string[] = [];
+    const initialAwaitsFrom: string[] = [];
     let firstOpIsAwait = false;
+    let seenNonAwait = false;
 
     for (let i = 0; i < agent.operations.length; i++) {
       const op = agent.operations[i]!;
       collectDeps(op, awaitsFrom, stakesTo);
       if (i === 0 && op.type === "AwaitOp") {
         firstOpIsAwait = true;
+      }
+      // Collect sources from leading awaits (before any non-await op)
+      if (!seenNonAwait && op.type === "AwaitOp") {
+        for (const s of op.sources) {
+          if (s.ref !== "*" && s.ref !== "any") initialAwaitsFrom.push(s.ref);
+        }
+      } else {
+        seenNonAwait = true;
       }
     }
 
@@ -43,6 +55,7 @@ export function resolveDeps(flow: FlowDecl): DepGraph {
       awaitsFrom: [...new Set(awaitsFrom)],
       stakesTo: [...new Set(stakesTo)],
       isReady: !firstOpIsAwait,
+      initialAwaitsFrom: [...new Set(initialAwaitsFrom)],
     });
   }
 
@@ -91,7 +104,9 @@ function collectDeps(op: Operation, awaitsFrom: string[], stakesTo: string[]): v
   }
 }
 
-/** Detect simple deadlocks: cycles where every agent in the cycle is blocked */
+/** Detect simple deadlocks: cycles where every agent in the cycle is blocked.
+ *  Uses only initial (leading) await dependencies — awaits that occur after
+ *  a stake/commit are sequential and can be resolved at runtime. */
 export function detectDeadlocks(graph: DepGraph): string[][] {
   const cycles: string[][] = [];
   const visited = new Set<string>();
@@ -115,7 +130,7 @@ export function detectDeadlocks(graph: DepGraph): string[][] {
 
       const dep = graph.agents.get(current);
       if (dep) {
-        for (const awaited of dep.awaitsFrom) {
+        for (const awaited of dep.initialAwaitsFrom) {
           const awaitedDep = graph.agents.get(awaited);
           if (awaitedDep && !awaitedDep.isReady) {
             dfs(awaited);

@@ -205,6 +205,31 @@ describe("Resolver", () => {
       // Blocked agent awaits a ready agent, so no true deadlock
       assert.equal(deadlocks.length, 0);
     });
+
+    it("no deadlock for sequential await-stake-await pattern (research pattern)", () => {
+      const graph = graphOf(`
+        flow "research" {
+          agent Researcher {
+            stake gather(topic: "test") -> @Analyst
+          }
+          agent Analyst {
+            await data <- @Researcher
+            stake analyze(data) -> @Critic
+            await verdict <- @Critic
+            commit verdict if verdict.confidence > 0.7
+            escalate @Human reason: "low confidence"
+          }
+          agent Critic {
+            await analysis <- @Analyst
+            stake challenge(analysis) -> @Analyst
+          }
+          converge when: committed_count >= 1
+          budget: rounds(5)
+        }
+      `);
+      const deadlocks = detectDeadlocks(graph);
+      assert.equal(deadlocks.length, 0, "Sequential await-stake-await should not be flagged as deadlock");
+    });
   });
 
   // ─── Complex Flow Graphs ───

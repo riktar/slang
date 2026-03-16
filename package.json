@@ -1,6 +1,6 @@
 {
   "name": "@riktar/slang",
-  "version": "0.7.4",
+  "version": "0.7.5",
   "description": "SLANG — Super Language for Agent Negotiation & Governance",
   "type": "module",
   "main": "./dist/index.cjs",

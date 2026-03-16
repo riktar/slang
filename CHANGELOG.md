@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Examples section** — reduced to essentials, pointing to the `examples/` folder with quick launch commands
 - Updated [copilot-instructions.md](.github/copilot-instructions.md) to reference new docs location
 
+## [0.7.5] — Deadlock Detection Fix
+
+### Fixed
+
+- **False-positive deadlock detection** — `detectDeadlocks()` incorrectly flagged sequential await-stake-await patterns (e.g. research flow: Analyst awaits Researcher, stakes to Critic, then awaits Critic) as cyclic deadlocks. Now only leading awaits (before any stake/commit) are considered for cycle detection. Affects core runtime, LSP diagnostics, MCP `check_flow`, and playground.
+
+### Added
+
+- `initialAwaitsFrom` field in `AgentDep` to distinguish blocking initial awaits from sequential mid-flow awaits
+- **Playground: Flow Analysis panel** — replaced the Run (Echo) tab with a static analysis section showing convergence verdict, deadlock cycles, diagnostics, and per-agent status
+
 ## [0.7.4] — Playground CLI Fix
 
 ### Fixed

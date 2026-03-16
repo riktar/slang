@@ -1,11 +1,12 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import Editor, { type OnMount, loader } from '@monaco-editor/react';
 import type * as monaco from 'monaco-editor';
-import { analyzeSource, runSource, buildGraphData, type AnalysisResult, type RunResult, type RuntimeEvent, type GraphNode, type GraphEdge } from './lib/engine';
+import { analyzeSource, buildGraphData, type AnalysisResult, type GraphNode, type GraphEdge } from './lib/engine';
 import { EXAMPLES } from './lib/examples';
 import { cn } from './lib/utils';
-import { Play, FileCode, GitFork, AlertTriangle, CheckCircle, XCircle, ChevronDown, Zap, RotateCcw, Download, Github } from 'lucide-react';
+import { FileCode, GitFork, AlertTriangle, CheckCircle, XCircle, ChevronDown, Zap, Download, Github, Copy, Terminal, X, ShieldCheck, ShieldAlert, ShieldQuestion } from 'lucide-react';
 import { SLANG_LANGUAGE_ID, languageConfiguration, monarchTokensProvider, SLANG_THEME } from './lib/slang-language';
+import ZERO_SETUP_PROMPT from '../../ZERO_SETUP_PROMPT.md?raw';
 import { createCompletionProvider, createHoverProvider, computeMarkers } from './lib/slang-monaco';
 
 const DEFAULT_SOURCE = EXAMPLES.hello.source;
@@ -25,11 +26,10 @@ function registerSlangLanguage(monacoInstance: typeof monaco) {
 export default function App() {
   const [source, setSource] = useState(DEFAULT_SOURCE);
   const [analysis, setAnalysis] = useState<AnalysisResult>(() => analyzeSource(DEFAULT_SOURCE));
-  const [activeTab, setActiveTab] = useState<'graph' | 'ast' | 'run'>('graph');
-  const [runResult, setRunResult] = useState<RunResult | null>(null);
-  const [isRunning, setIsRunning] = useState(false);
-  const [liveEvents, setLiveEvents] = useState<RuntimeEvent[]>([]);
+  const [activeTab, setActiveTab] = useState<'graph' | 'ast'>('graph');
   const [showExamples, setShowExamples] = useState(false);
+  const [showRunModal, setShowRunModal] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const monacoRef = useRef<typeof monaco | null>(null);
   const editorInstanceRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -81,27 +81,12 @@ export default function App() {
     }, 300);
   }, []);
 
-  const handleRun = useCallback(async () => {
-    setIsRunning(true);
-    setLiveEvents([]);
-    setActiveTab('run');
-    setRunResult(null);
-
-    const result = await runSource(source, (ev) => {
-      setLiveEvents(prev => [...prev, ev]);
-    });
-
-    setRunResult(result);
-    setIsRunning(false);
-  }, [source]);
 
   const handleLoadExample = useCallback((key: string) => {
     const example = EXAMPLES[key];
     if (example) {
       setSource(example.source);
       setAnalysis(analyzeSource(example.source));
-      setRunResult(null);
-      setLiveEvents([]);
       setShowExamples(false);
     }
   }, []);
@@ -114,6 +99,17 @@ export default function App() {
     a.download = 'flow.slang';
     a.click();
     URL.revokeObjectURL(url);
+  }, [source]);
+
+  const handleCopyAndOpen = useCallback((target: 'chatgpt' | 'claude') => {
+    const prompt = ZERO_SETUP_PROMPT + '\n\n---\n\nExecute this SLANG flow:\n\n```slang\n' + source + '\n```';
+    navigator.clipboard.writeText(prompt).then(() => {
+      const label = target === 'chatgpt' ? 'ChatGPT' : 'Claude';
+      setToastMessage(`Prompt copied! Paste it (Ctrl+V) in ${label}`);
+      setTimeout(() => setToastMessage(null), 6000);
+      const url = target === 'chatgpt' ? 'https://chatgpt.com/' : 'https://claude.ai/new';
+      window.open(url, '_blank', 'noopener,noreferrer');
+    });
   }, [source]);
 
   const graphData = analysis.graph ? buildGraphData(analysis.graph) : null;
@@ -130,11 +126,11 @@ export default function App() {
           <div className="flex items-center gap-2">
             <Zap className="w-5 h-5 text-amber-400" />
             <h1 className="text-lg font-bold tracking-tight">SLANG Playground</h1>
-            <span className="text-xs text-zinc-500 font-mono">v0.7.4</span>
+            <span className="text-xs text-zinc-500 font-mono">v0.7.5</span>
           </div>
           <span className="text-zinc-700 hidden sm:block">·</span>
           <p className="text-xs text-zinc-500 hidden sm:block">
-            A declarative meta-language for orchestrating multi-agent workflows.
+            Write the workflow, your LLM runs it. No code needed.
           </p>
           <a
             href="https://github.com/riktar/slang"
@@ -158,7 +154,7 @@ export default function App() {
           </button>
           <div className="relative">
             <button
-              onClick={() => setShowExamples(!showExamples)}
+              onClick={() => { setShowExamples(!showExamples); setShowRunModal(false); }}
               className="flex items-center gap-1 px-3 py-1.5 text-sm bg-zinc-800 hover:bg-zinc-700 rounded-md transition-colors"
             >
               <FileCode className="w-4 h-4" />
@@ -179,21 +175,79 @@ export default function App() {
               </div>
             )}
           </div>
-          <button
-            onClick={handleRun}
-            disabled={isRunning || hasErrors}
-            className={cn(
-              "flex items-center gap-1 px-4 py-1.5 text-sm font-medium rounded-md transition-colors",
-              hasErrors
-                ? "bg-zinc-700 text-zinc-500 cursor-not-allowed"
-                : "bg-emerald-600 hover:bg-emerald-500 text-white",
+          <div className="relative">
+            <button
+              onClick={() => { setShowRunModal(!showRunModal); setShowExamples(false); }}
+              className="flex items-center gap-1.5 px-5 py-1.5 text-sm font-semibold bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white rounded-md transition-all shadow-lg shadow-violet-900/30 hover:shadow-violet-800/40"
+            >
+              <Zap className="w-4 h-4" />
+              Run with your LLM
+              <ChevronDown className="w-3 h-3" />
+            </button>
+            {showRunModal && (
+              <div className="absolute right-0 top-full mt-1 w-80 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-50 p-1">
+                <div className="px-3 py-2 text-xs text-zinc-400 border-b border-zinc-700 mb-1">
+                  Your flow will be copied to clipboard. Paste it in the chat.
+                </div>
+                <button
+                  onClick={() => { handleCopyAndOpen('chatgpt'); setShowRunModal(false); }}
+                  className="flex items-center gap-3 w-full text-left px-3 py-2.5 text-sm hover:bg-zinc-700 rounded-md transition-colors"
+                >
+                  <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="white"><path d="M22.282 9.821a5.985 5.985 0 0 0-.516-4.91 6.046 6.046 0 0 0-6.51-2.9A6.065 6.065 0 0 0 4.981 4.18a5.985 5.985 0 0 0-3.998 2.9 6.046 6.046 0 0 0 .743 7.097 5.98 5.98 0 0 0 .51 4.911 6.051 6.051 0 0 0 6.515 2.9A5.985 5.985 0 0 0 13.26 24a6.056 6.056 0 0 0 5.772-4.206 5.99 5.99 0 0 0 3.997-2.9 6.056 6.056 0 0 0-.747-7.073zM13.26 22.43a4.476 4.476 0 0 1-2.876-1.04l.141-.081 4.779-2.758a.795.795 0 0 0 .392-.681v-6.737l2.02 1.168a.071.071 0 0 1 .038.052v5.583a4.504 4.504 0 0 1-4.494 4.494zM3.6 18.304a4.47 4.47 0 0 1-.535-3.014l.142.085 4.783 2.759a.771.771 0 0 0 .78 0l5.843-3.369v2.332a.08.08 0 0 1-.033.062L9.74 19.95a4.5 4.5 0 0 1-6.14-1.646zM2.34 7.896a4.485 4.485 0 0 1 2.366-1.973V11.6a.766.766 0 0 0 .388.676l5.815 3.355-2.02 1.168a.076.076 0 0 1-.071 0l-4.83-2.786A4.504 4.504 0 0 1 2.34 7.872zm16.597 3.855l-5.833-3.387L15.119 7.2a.076.076 0 0 1 .071 0l4.83 2.791a4.494 4.494 0 0 1-.676 8.105v-5.678a.79.79 0 0 0-.407-.667zm2.01-3.023l-.141-.085-4.774-2.782a.776.776 0 0 0-.785 0L9.409 9.23V6.897a.066.066 0 0 1 .028-.061l4.83-2.787a4.5 4.5 0 0 1 6.68 4.66zm-12.64 4.135l-2.02-1.164a.08.08 0 0 1-.038-.057V6.075a4.5 4.5 0 0 1 7.375-3.453l-.142.08L8.704 5.46a.795.795 0 0 0-.393.681zm1.097-2.365l2.602-1.5 2.607 1.5v2.999l-2.597 1.5-2.607-1.5z"/></svg>
+                  <div>
+                    <div className="font-medium">Run in ChatGPT</div>
+                    <div className="text-xs text-zinc-500">Opens chatgpt.com — paste with Ctrl+V</div>
+                  </div>
+                </button>
+                <button
+                  onClick={() => { handleCopyAndOpen('claude'); setShowRunModal(false); }}
+                  className="flex items-center gap-3 w-full text-left px-3 py-2.5 text-sm hover:bg-zinc-700 rounded-md transition-colors"
+                >
+                  <svg className="w-5 h-5 shrink-0" viewBox="0 0 64 64" fill="white"><path d="M32 4L35.5 22.5L48 8L40.5 25.5L56 16L43.5 29.5L60 28L43 33L60 36L43.5 34.5L56 48L40.5 38.5L48 56L35.5 41.5L32 60L28.5 41.5L16 56L23.5 38.5L8 48L20.5 34.5L4 36L21 33L4 28L20.5 29.5L8 16L23.5 25.5L16 8L28.5 22.5Z"/></svg>
+                  <div>
+                    <div className="font-medium">Run in Claude</div>
+                    <div className="text-xs text-zinc-500">Opens claude.ai — paste with Ctrl+V</div>
+                  </div>
+                </button>
+                <div className="border-t border-zinc-700 my-1" />
+                <button
+                  onClick={() => { const prompt = ZERO_SETUP_PROMPT + '\n\n---\n\nExecute this SLANG flow:\n\n```slang\n' + source + '\n```'; navigator.clipboard.writeText(prompt); setToastMessage('Prompt + flow copied! Paste it in any LLM.'); setTimeout(() => setToastMessage(null), 5000); setShowRunModal(false); }}
+                  className="flex items-center gap-3 w-full text-left px-3 py-2.5 text-sm hover:bg-zinc-700 rounded-md transition-colors"
+                >
+                  <Copy className="w-5 h-5 text-zinc-400 shrink-0" />
+                  <div>
+                    <div className="font-medium">Copy prompt</div>
+                    <div className="text-xs text-zinc-500">For Gemini, Copilot, or any other LLM</div>
+                  </div>
+                </button>
+                <div className="border-t border-zinc-700 my-1" />
+                <button
+                  onClick={() => { navigator.clipboard.writeText('npm install -g @riktar/slang'); setToastMessage('Install command copied!'); setTimeout(() => setToastMessage(null), 3000); setShowRunModal(false); }}
+                  className="flex items-center gap-3 w-full text-left px-3 py-2.5 text-sm hover:bg-zinc-700 rounded-md transition-colors"
+                >
+                  <Terminal className="w-5 h-5 text-amber-400 shrink-0" />
+                  <div>
+                    <div className="font-medium">Install CLI</div>
+                    <div className="text-xs text-zinc-500 font-mono">npm i -g @riktar/slang</div>
+                  </div>
+                </button>
+              </div>
             )}
-          >
-            {isRunning ? <RotateCcw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-            {isRunning ? 'Running...' : 'Run (Echo)'}
-          </button>
+          </div>
+
         </div>
       </header>
+
+      {/* Toast notification */}
+      {toastMessage && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-3 px-5 py-3 bg-violet-600 text-white text-sm font-medium rounded-lg shadow-2xl shadow-violet-900/50 animate-bounce">
+          <Copy className="w-5 h-5 shrink-0" />
+          <span>{toastMessage}</span>
+          <button onClick={() => setToastMessage(null)} className="ml-2 hover:text-violet-200">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Main Content */}
       <div className="flex-1 flex min-h-0">
@@ -293,27 +347,13 @@ export default function App() {
               <FileCode className="w-3.5 h-3.5" />
               AST
             </TabButton>
-            <TabButton active={activeTab === 'run'} onClick={() => setActiveTab('run')}>
-              <Play className="w-3.5 h-3.5" />
-              Run
-              {runResult && (
-                <span className={cn(
-                  "ml-1 px-1.5 py-0.5 text-[10px] rounded font-medium",
-                  runResult.state?.status === 'converged' ? "bg-emerald-900/50 text-emerald-400" :
-                  runResult.state?.status === 'deadlock' ? "bg-red-900/50 text-red-400" :
-                  "bg-amber-900/50 text-amber-400",
-                )}>
-                  {runResult.state?.status ?? 'error'}
-                </span>
-              )}
-            </TabButton>
+
           </div>
 
           {/* Tab content */}
           <div className="flex-1 min-h-0 overflow-auto">
-            {activeTab === 'graph' && <GraphPanel graphData={graphData} deadlocks={analysis.deadlocks} />}
+            {activeTab === 'graph' && <GraphPanel graphData={graphData} deadlocks={analysis.deadlocks} diagnostics={analysis.diagnostics} hasErrors={hasErrors} />}
             {activeTab === 'ast' && <ASTPanel program={analysis.program} />}
-            {activeTab === 'run' && <RunPanel result={runResult} events={isRunning ? liveEvents : (runResult?.events ?? [])} isRunning={isRunning} error={runResult?.error ?? null} />}
           </div>
         </div>
       </div>
@@ -341,7 +381,7 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
 
 // ─── Graph Panel ───
 
-function GraphPanel({ graphData, deadlocks }: { graphData: { nodes: GraphNode[]; edges: GraphEdge[] } | null; deadlocks: string[][] }) {
+function GraphPanel({ graphData, deadlocks, diagnostics, hasErrors }: { graphData: { nodes: GraphNode[]; edges: GraphEdge[] } | null; deadlocks: string[][]; diagnostics: AnalysisResult['diagnostics']; hasErrors: boolean }) {
   if (!graphData || graphData.nodes.length === 0) {
     return (
       <div className="flex items-center justify-center h-full text-zinc-600 text-sm">
@@ -351,6 +391,13 @@ function GraphPanel({ graphData, deadlocks }: { graphData: { nodes: GraphNode[];
   }
 
   const deadlockSet = new Set(deadlocks.flat());
+  const errorDiags = diagnostics.filter(d => d.level === 'error');
+  const warningDiags = diagnostics.filter(d => d.level === 'warning');
+
+  // Determine convergence verdict
+  const hasDeadlocks = deadlocks.length > 0;
+  const hasNoCommit = warningDiags.some(d => d.message.includes('has no commit'));
+  const verdict: 'ok' | 'deadlock' | 'warning' = hasDeadlocks ? 'deadlock' : (hasNoCommit || hasErrors) ? 'warning' : 'ok';
 
   // Simple layout: nodes in a circle
   const cx = 250, cy = 200, r = 140;
@@ -459,6 +506,73 @@ function GraphPanel({ graphData, deadlocks }: { graphData: { nodes: GraphNode[];
           );
         })}
       </svg>
+      {/* Flow Analysis */}
+      <div className="border-t border-zinc-800 px-4 py-3 space-y-3">
+        {/* Convergence verdict */}
+        <div className={cn(
+          "flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium",
+          verdict === 'ok' && "bg-emerald-950/40 text-emerald-400 border border-emerald-900/50",
+          verdict === 'deadlock' && "bg-red-950/40 text-red-400 border border-red-900/50",
+          verdict === 'warning' && "bg-amber-950/40 text-amber-400 border border-amber-900/50",
+        )}>
+          {verdict === 'ok' && <><ShieldCheck className="w-4 h-4" /> Will converge</>}
+          {verdict === 'deadlock' && <><ShieldAlert className="w-4 h-4" /> Deadlock detected</>}
+          {verdict === 'warning' && <><ShieldQuestion className="w-4 h-4" /> May not converge</>}
+        </div>
+
+        {/* Deadlock cycles */}
+        {deadlocks.length > 0 && (
+          <div className="space-y-1">
+            {deadlocks.map((cycle, i) => (
+              <div key={i} className="flex items-center gap-2 text-xs text-red-400">
+                <XCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>Cycle: {cycle.join(' \u2192 ')} \u2192 {cycle[0]}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Diagnostics */}
+        {(errorDiags.length > 0 || warningDiags.length > 0) && (
+          <div className="space-y-1">
+            <div className="text-[10px] uppercase tracking-wider text-zinc-600 font-semibold">Diagnostics</div>
+            {errorDiags.map((d, i) => (
+              <div key={`e-${i}`} className="flex items-start gap-2 text-xs">
+                <XCircle className="w-3.5 h-3.5 text-red-500 shrink-0 mt-0.5" />
+                <span className="text-zinc-300">{d.message}</span>
+              </div>
+            ))}
+            {warningDiags.map((d, i) => (
+              <div key={`w-${i}`} className="flex items-start gap-2 text-xs">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
+                <span className="text-zinc-300">{d.message}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Agent status */}
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-wider text-zinc-600 font-semibold">Agents</div>
+          {graphData.nodes.map(node => {
+            const inDeadlock = deadlockSet.has(node.id);
+            const noCommit = warningDiags.some(d => d.message.includes(`"${node.id}"`) && d.message.includes('no commit'));
+            return (
+              <div key={node.id} className="flex items-center gap-2 text-xs">
+                <span className={cn(
+                  "w-2 h-2 rounded-full shrink-0",
+                  inDeadlock ? "bg-red-500" : node.isReady ? "bg-emerald-500" : "bg-amber-500",
+                )} />
+                <span className="text-zinc-200 font-mono">{node.id}</span>
+                {node.isReady && <span className="text-emerald-600 text-[10px]">ready</span>}
+                {inDeadlock && <span className="text-red-600 text-[10px]">deadlocked</span>}
+                {!node.isReady && !inDeadlock && <span className="text-amber-600 text-[10px]">blocked</span>}
+                {noCommit && <span className="text-amber-600 text-[10px]">(no commit)</span>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
@@ -481,147 +595,4 @@ function ASTPanel({ program }: { program: AnalysisResult['program'] }) {
   );
 }
 
-// ─── Run Panel ───
 
-function RunPanel({ result, events, isRunning, error }: { result: RunResult | null; events: RuntimeEvent[]; isRunning: boolean; error: string | null }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [events.length]);
-
-  if (!result && !isRunning && events.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-full text-zinc-600 text-sm">
-        Click "Run (Echo)" to execute the flow with the echo adapter
-      </div>
-    );
-  }
-
-  return (
-    <div ref={scrollRef} className="p-4 overflow-auto h-full">
-      {/* Events */}
-      <div className="space-y-1">
-        {events.map((ev, i) => (
-          <EventLine key={i} event={ev} />
-        ))}
-      </div>
-
-      {isRunning && (
-        <div className="flex items-center gap-2 mt-3 text-xs text-zinc-500">
-          <RotateCcw className="w-3 h-3 animate-spin" />
-          Running...
-        </div>
-      )}
-
-      {/* Final result */}
-      {result && !isRunning && (
-        <div className="mt-4 pt-3 border-t border-zinc-800">
-          {error && (
-            <div className="flex items-start gap-2 text-xs text-red-400 mb-2">
-              <XCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-              {error}
-            </div>
-          )}
-          {result.state && (
-            <div className="space-y-1 text-xs font-mono">
-              <div className="flex items-center gap-2">
-                <span className="text-zinc-500">Status:</span>
-                <span className={cn(
-                  "px-1.5 py-0.5 rounded text-[10px] font-medium",
-                  result.state.status === 'converged' ? "bg-emerald-900/50 text-emerald-400" :
-                  result.state.status === 'deadlock' ? "bg-red-900/50 text-red-400" :
-                  result.state.status === 'escalated' ? "bg-amber-900/50 text-amber-400" :
-                  "bg-zinc-800 text-zinc-400",
-                )}>
-                  {result.state.status}
-                </span>
-              </div>
-              <div className="text-zinc-500">Rounds: <span className="text-zinc-300">{result.state.round}</span></div>
-              <div className="text-zinc-500">Tokens: <span className="text-zinc-300">{result.state.tokensUsed}</span></div>
-              {result.state.outputs.length > 0 && (
-                <div className="mt-2">
-                  <div className="text-zinc-500 mb-1">Outputs:</div>
-                  {result.state.outputs.map((out: unknown, i: number) => (
-                    <pre key={i} className="text-zinc-300 bg-zinc-900 rounded p-2 mb-1 text-[11px] leading-4 whitespace-pre-wrap break-words">
-                      {typeof out === 'string' ? out : JSON.stringify(out, null, 2)}
-                    </pre>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Event Line ───
-
-function EventLine({ event }: { event: RuntimeEvent }) {
-  switch (event.type) {
-    case 'round_start':
-      return (
-        <div className="text-xs font-mono text-blue-400 font-bold mt-2">
-          ═══ ROUND {event.round} ═══
-        </div>
-      );
-    case 'agent_start':
-      return (
-        <div className="text-xs font-mono text-cyan-400">
-          --- {event.agent}: {event.operation}
-        </div>
-      );
-    case 'agent_output':
-      return (
-        <pre className="text-xs font-mono text-zinc-400 pl-4 whitespace-pre-wrap break-words">
-          {event.output}
-        </pre>
-      );
-    case 'agent_commit':
-      return (
-        <div className="text-xs font-mono text-emerald-400">
-          ✓ {event.agent} COMMITTED
-        </div>
-      );
-    case 'agent_escalate':
-      return (
-        <div className="text-xs font-mono text-amber-400">
-          ↑ {event.agent} ESCALATED to @{event.target}{event.reason ? `: ${event.reason}` : ''}
-        </div>
-      );
-    case 'agent_retry':
-      return (
-        <div className="text-xs font-mono text-amber-500">
-          ⟳ {event.agent} retry #{event.attempt}: {event.error}
-        </div>
-      );
-    case 'tool_call':
-      return (
-        <div className="text-xs font-mono text-violet-400">
-          🔧 {event.agent} → {event.tool}({JSON.stringify(event.args)})
-        </div>
-      );
-    case 'tool_result':
-      return (
-        <div className="text-xs font-mono text-zinc-500 pl-4">
-          ← {event.result.slice(0, 200)}
-        </div>
-      );
-    case 'flow_converged':
-      return <div className="text-xs font-mono text-emerald-400 font-bold mt-1">═══ FLOW CONVERGED ═══</div>;
-    case 'flow_budget_exceeded':
-      return <div className="text-xs font-mono text-amber-400 font-bold mt-1">═══ BUDGET EXCEEDED (round {event.round}) ═══</div>;
-    case 'flow_deadlock':
-      return <div className="text-xs font-mono text-red-400 font-bold mt-1">═══ DEADLOCK: {event.agents.join(', ')} ═══</div>;
-    case 'flow_escalated':
-      return <div className="text-xs font-mono text-amber-400 font-bold mt-1">═══ ESCALATED TO @{event.target} ═══</div>;
-    case 'checkpoint':
-      return <div className="text-xs font-mono text-zinc-600">checkpoint (round {event.round})</div>;
-    default:
-      return null;
-  }
-}

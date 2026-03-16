@@ -129,25 +129,29 @@ flow "deadlock" {
     source: `flow "iterative-review" {
   agent Writer {
     role: "Technical writer"
-    let draft = "initial draft"
+
+    let approved = false
     stake write(topic: "AI Safety") -> @Reviewer
-    await feedback <- @Reviewer
-    when feedback.approved {
-      commit feedback
-    } else {
-      set draft = feedback.notes
-      stake revise(draft) -> @Reviewer
+    repeat until approved {
+      await feedback <- @Reviewer
+      when feedback.approved {
+        set approved = true
+        commit feedback
+      } else {
+        stake revise(feedback.notes) -> @Reviewer
+      }
     }
   }
 
   agent Reviewer {
     role: "Senior editor"
-    let reviewed = false
-    repeat until reviewed {
+
+    let done = false
+    repeat until done {
       await draft <- @Writer
-      stake review(draft, criteria: ["clarity", "accuracy"]) -> @Writer
+      let result = stake review(draft, criteria: ["clarity", "accuracy"]) -> @Writer
         output: { approved: "boolean", notes: "string" }
-      set reviewed = true
+      set done = result.approved
     }
     commit
   }
