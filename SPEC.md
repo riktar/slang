@@ -836,19 +836,32 @@ flow "hello" {
 ```slang
 flow "review" {
   agent Writer {
+    let approved = false
     stake write(topic: "SLANG benefits") -> @Reviewer
-    await feedback <- @Reviewer
-    commit feedback if feedback.approved
-    stake revise(feedback.notes) -> @Reviewer
+    repeat until approved {
+      await feedback <- @Reviewer
+      when feedback.approved {
+        set approved = true
+        commit feedback
+      } else {
+        stake revise(feedback.notes) -> @Reviewer
+      }
+    }
   }
 
   agent Reviewer {
-    await draft <- @Writer
-    stake review(draft, criteria: ["clarity", "accuracy"]) -> @Writer
+    let done = false
+    repeat until done {
+      await draft <- @Writer
+      let result = stake review(draft, criteria: ["clarity", "accuracy"]) -> @Writer
+        output: { approved: "boolean", notes: "string" }
+      set done = result.approved
+    }
+    commit
   }
 
   converge when: committed_count >= 1
-  budget: rounds(3)
+  budget: rounds(5)
 }
 ```
 

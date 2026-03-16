@@ -8,25 +8,32 @@ flow "article" {
     role: "Technical writer specializing in clear, concise articles"
     retry: 2
 
+    let approved = false
     stake write(topic: "Why multi-agent systems need a standard language") -> @Reviewer
-    await feedback <- @Reviewer
-
-    when feedback.approved {
-      commit feedback
-    } else {
-      stake revise(feedback) -> @Reviewer
+    repeat until approved {
+      await feedback <- @Reviewer
+      when feedback.approved {
+        set approved = true
+        commit feedback
+      } else {
+        stake revise(feedback) -> @Reviewer
+      }
     }
   }
 
   agent Reviewer {
     role: "Senior editor focused on clarity, accuracy, and completeness"
 
-    await draft <- @Writer
-    stake review(draft, criteria: ["clarity", "accuracy", "completeness"]) -> @Writer
-      output: { approved: "boolean", score: "number", notes: "string" }
+    let done = false
+    repeat until done {
+      await draft <- @Writer
+      let result = stake review(draft, criteria: ["clarity", "accuracy", "completeness"]) -> @Writer
+        output: { approved: "boolean", score: "number", notes: "string" }
+      set done = result.approved
+    }
     commit
   }
 
   converge when: all_committed
-  budget: rounds(3)
+  budget: rounds(5)
 }

@@ -16,26 +16,36 @@ export const EXAMPLES: Record<string, { name: string; source: string }> = {
   agent Writer {
     role: "Technical writer"
     model: "gpt-4o"
+
+    let approved = false
     stake write(topic: "AI Safety") -> @Reviewer
-    await feedback <- @Reviewer
-    when feedback.approved {
-      commit feedback
-    }
-    when feedback.rejected {
-      stake revise(feedback) -> @Reviewer
+    repeat until approved {
+      await feedback <- @Reviewer
+      when feedback.approved {
+        set approved = true
+        commit feedback
+      } else {
+        stake revise(feedback) -> @Reviewer
+      }
     }
   }
 
   agent Reviewer {
     role: "Senior editor"
     model: "claude-sonnet"
-    await draft <- @Writer
-    stake review(draft, criteria: ["clarity", "accuracy"]) -> @Writer
-      output: { approved: "boolean", score: "number" }
+
+    let done = false
+    repeat until done {
+      await draft <- @Writer
+      let result = stake review(draft, criteria: ["clarity", "accuracy"]) -> @Writer
+        output: { approved: "boolean", score: "number" }
+      set done = result.approved
+    }
+    commit
   }
 
   converge when: committed_count >= 1
-  budget: rounds(3)
+  budget: rounds(5)
 }`,
   },
   research: {

@@ -151,7 +151,7 @@ If the flow converged AND has `deliver:` statements, execute them after the fina
 
 12. **`output: { field: \"type\" }`** on a stake means: your response for that stake MUST include a JSON block with those exact fields. Wrap it in ````json ... ``` ```. Downstream agents reading `result.field` rely on this structure.
 
-13. **`tools: [tool_name]`** in agent metadata means: that agent can use those tools to gather information or perform actions. When acting as that agent, if you determine a tool call would help, include `TOOL_CALL: tool_name({"arg": "value"})` in your response. Then simulate the tool's result and continue. In zero-setup mode, generate realistic tool results inline.
+13. **`tools: [tool_name]`** in agent metadata means: that agent can use those tools to gather information or perform actions. When acting as that agent, if you determine a tool call would help, try to use it. **If you already have real tools available** in your environment (e.g., `read_file`, `write_file`, `web_search`, `code_exec`, or similar capabilities provided by your host — such as an IDE, MCP server, or chat platform), **use them directly** instead of simulating. Match tool names semantically: `web_search` maps to any available search/browsing tool, `code_exec` maps to any code execution or terminal tool, `read_file`/`write_file` map to any file system tool, etc. If no matching real tool is available, simulate the tool's result inline by generating realistic output.
 
 14. **`let name = value`** declares a local variable. Track it in the agent's state across rounds. Use its value in subsequent expressions.
 

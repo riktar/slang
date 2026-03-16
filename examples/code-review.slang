@@ -8,16 +8,19 @@ flow "code-review" {
     tools: [code_exec]
     retry: 2
 
+    let approved = false
     stake implement(spec: "REST API endpoint for user registration",
                     language: "TypeScript") -> @Reviewer
       output: { code: "string", tests: "string", language: "string" }
-    await feedback <- @Reviewer
-
-    when feedback.approved {
-      commit feedback
-    } else {
-      stake revise(feedback.notes, original: feedback) -> @Reviewer
-        output: { code: "string", tests: "string", language: "string" }
+    repeat until approved {
+      await feedback <- @Reviewer
+      when feedback.approved {
+        set approved = true
+        commit feedback
+      } else {
+        stake revise(feedback.notes, original: feedback) -> @Reviewer
+          output: { code: "string", tests: "string", language: "string" }
+      }
     }
   }
 
@@ -25,12 +28,16 @@ flow "code-review" {
     role: "Staff engineer focused on security, performance, and best practices"
     tools: [code_exec]
 
-    await code <- @Developer
-    stake review(code, checks: ["security", "performance", "error handling"]) -> @Developer
-      output: { approved: "boolean", score: "number", notes: "string" }
+    let done = false
+    repeat until done {
+      await code <- @Developer
+      let result = stake review(code, checks: ["security", "performance", "error handling"]) -> @Developer
+        output: { approved: "boolean", score: "number", notes: "string" }
+      set done = result.approved
+    }
     commit
   }
 
   converge when: all_committed
-  budget: rounds(4)
+  budget: rounds(6)
 }
