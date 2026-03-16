@@ -20,5 +20,4 @@ flow "local-stake" {
   }
 
   converge when: all_committed
-  budget: rounds(5)
 }

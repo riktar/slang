@@ -39,5 +39,4 @@ flow "code-review" {
   }
 
   converge when: all_committed
-  budget: rounds(6)
 }

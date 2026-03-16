@@ -44,8 +44,7 @@ export const EXAMPLES: Record<string, { name: string; source: string }> = {
     commit
   }
 
-  converge when: committed_count >= 1
-  budget: rounds(5)
+  converge when: all_committed
 }`,
   },
   research: {
@@ -72,8 +71,7 @@ export const EXAMPLES: Record<string, { name: string; source: string }> = {
     stake challenge(analysis, mode: "steelmanning") -> @Analyst
   }
 
-  converge when: committed_count >= 1
-  budget: tokens(40000), rounds(4)
+  converge when: all_committed
 }`,
   },
   broadcast: {
@@ -102,7 +100,6 @@ export const EXAMPLES: Record<string, { name: string; source: string }> = {
   }
 
   converge when: all_committed
-  budget: rounds(5)
 }`,
   },
   deadlock: {
@@ -156,8 +153,7 @@ flow "deadlock" {
     commit
   }
 
-  converge when: committed_count >= 1
-  budget: rounds(5)
+  converge when: all_committed
 }`,
   },
 };

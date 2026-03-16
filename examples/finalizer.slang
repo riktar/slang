@@ -21,5 +21,4 @@ flow "report-with-delivery" {
   deliver: webhook(url: "https://hooks.example.com/reports")
 
   converge when: all_committed
-  budget: rounds(3)
 }

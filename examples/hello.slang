@@ -13,5 +13,4 @@ flow "hello" {
     commit
   }
   converge when: all_committed
-  budget: rounds(2)
 }

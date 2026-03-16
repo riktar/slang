@@ -21,5 +21,4 @@ flow "full-report" {
   }
 
   converge when: all_committed
-  budget: rounds(5)
 }

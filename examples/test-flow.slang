@@ -13,5 +13,4 @@ flow "greeting-test" {
   expect @Greeter.output contains "hello"
 
   converge when: all_committed
-  budget: rounds(1)
 }

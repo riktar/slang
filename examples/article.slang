@@ -1,5 +1,5 @@
 -- Writer/Reviewer loop with structured output, retry, and model routing
--- Features: role, model, retry, output schema, when blocks, converge, budget
+-- Features: role, model, retry, output schema, when blocks, converge
 -- Run with: slang run article.slang --adapter openrouter --api-key $OPENROUTER_API_KEY
 
 flow "article" {
@@ -35,5 +35,4 @@ flow "article" {
   }
 
   converge when: all_committed
-  budget: rounds(5)
 }

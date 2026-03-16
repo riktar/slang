@@ -37,5 +37,4 @@ flow "parallel-report" {
   }
 
   converge when: all_committed
-  budget: rounds(3)
 }

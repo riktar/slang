@@ -29,6 +29,5 @@ flow "iterative-review" {
     commit
   }
 
-  converge when: committed_count >= 1
-  budget: rounds(5)
+  converge when: all_committed
 }
