@@ -1,6 +1,6 @@
 # MCP Server
 
-Built-in [Model Context Protocol](https://modelcontextprotocol.io/) server. No API key needed - delegates calls back to the host.
+Built-in [Model Context Protocol](https://modelcontextprotocol.io/) server. Run SLANG workflows from any MCP-compatible host — no API key needed, the host's LLM does the work.
 
 ```bash
 claude mcp add slang -- npx --package @riktar/slang slang-mcp

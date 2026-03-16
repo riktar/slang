@@ -8,8 +8,8 @@
 
 SLANG is a minimal, LLM-native meta-language for orchestrating multi-agent workflows. It is designed to be:
 
-- **Readable** by both humans and LLMs without tooling
-- **Executable** by an LLM directly (zero-setup) or by a thin runtime (production)
+- **Readable** by anyone on the team — PMs, analysts, developers, and LLMs alike
+- **Executable** by an LLM directly (zero-setup, no code) or by a thin runtime (production)
 - **Composable** — flows can import and nest other flows
 
 SLANG has exactly **three primitives**: `stake`, `await`, `commit/escalate`.

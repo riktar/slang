@@ -1,6 +1,6 @@
 # Playground
 
-Built-in web editor. Write, visualize, and execute flows in your browser. No API key needed.
+Built-in web editor. Write, visualize, and run AI workflows in your browser — no code, no API key, no setup.
 
 ```bash
 slang playground              # Opens http://localhost:5174

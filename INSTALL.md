@@ -1,6 +1,6 @@
 # SLANG — Installation Guide
 
-SLANG ships as both a **CLI tool** and an **MCP server**, so it plugs into every major AI environment without friction.
+SLANG ships as both a **CLI tool** and an **MCP server**, so it plugs into every major AI environment without friction. No code needed to get started — write your workflow, your LLM runs it.
 
 ---
 

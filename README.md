@@ -5,9 +5,8 @@
 </p>
 
 <p align="center">
-  <strong>The SQL of AI agents.</strong><br/>
-  A declarative meta-language for orchestrating multi-agent workflows.<br/>
-  Readable by humans. Executable by LLMs. Portable across models.
+  <strong>Your AI workflow in a format anyone on the team can read, edit, and validate.</strong><br/>
+  Write the workflow in SLANG, your favorite LLM runs it. No code needed.<br/>
 </p>
 
 <p align="center">
@@ -42,7 +41,7 @@ flow "research" {
 }
 ```
 
-That's it. Three primitives. You can read it, your PM can read it, your LLM can read it.
+That's it. Three primitives. Your PM can read it. Your analyst can edit it. Your LLM can run it. No Python, no TypeScript — just intent.
 
 Everything else follows from these:
 
@@ -73,7 +72,7 @@ No install, no API key, no runtime.
 3. Paste your `.slang` flow
 4. Done
 
-The LLM becomes your runtime. Great for prototyping, one-offs, or when you just want it to work without setup. No SDK can do this, because that's contradictory.
+The LLM becomes your runtime. Perfect for non-developers, quick prototyping, or when you just want it to work — no install, no code, no friction.
 
 </td>
 <td width="50%" valign="top">
@@ -157,24 +156,25 @@ slang playground
 
 ## Why SLANG?
 
-### It's not a framework.
+### It's not a framework. It's a shared language for your team.
 
 > SLANG is **Super Language for Agent Negotiation & Governance**
 
-LangChain, CrewAI, AutoGen - they're SDKs. Python/TypeScript libraries. Classes, decorators, config files. SLANG isn't any of that.
+LangChain, CrewAI, AutoGen — they're SDKs. Python/TypeScript libraries. Only developers can use them. Everyone else has to wait, ask, or guess what the workflow actually does.
 
-**SLANG is a language.** Like SQL is a language for querying data, SLANG is a language for orchestrating agents.
+**SLANG is a language anyone can read and write.** Your PM defines the workflow. Your analyst tweaks the logic. Your developer hooks it up to real tools. Everyone works on the same `.slang` file.
 
 | SQL | SLANG |
 |-----|-------|
 | Doesn't replace C/Java | Doesn't replace Python/TypeScript |
-| Created a new category | New category: declarative |
-| Readable by humans | Same - anyone reads it |
-| Portable across DBs | Portable across LLMs |
+| Non-devs write queries | Non-devs write workflows |
+| Readable by the whole team | Same — anyone reads and edits it |
 | LLMs generate it | LLMs generate it |
 | Not complete. That's the point | Not general-purpose. That's the point |
 
-### Same flow, any model.
+### No code needed.
+
+Describe what your agents should do. SLANG reads like plain English:
 
 ```
 flow "hybrid-analysis" {
@@ -192,36 +192,37 @@ flow "hybrid-analysis" {
 }
 ```
 
-You get 300+ models via [OpenRouter](https://openrouter.ai) with one API key. Different agents can use different providers in the same flow. Zero vendor lock-in. Switch by changing one line.
+Paste it into ChatGPT and it runs. Use the CLI for production with 300+ models via [OpenRouter](https://openrouter.ai). Same file, zero vendor lock-in.
 
-### Human-readable by design.
+### The `.slang` file is the documentation.
 
 Read this flow out loud:
 
 > *"The Researcher stakes gather on "quantum computer" topic and sends it to the Analyst. The Analyst awaits the data, analyzes it, and sends the output to the user. The flow stop when the Researcher and the Analyst have committed their job"*
 
-No diagrams, no comments, no docs needed. The `.slang` file is the documentation.
+No diagrams, no comments, no docs needed. Show the `.slang` file in a meeting and everyone understands what the AI workflow does.
 
 ### Who is SLANG for?
 
 | Audience | Why |
 |----------|-----|
-| **PMs, analysts** | No code needed: just describe what agents should do. Paste into ChatGPT and it works. Zapier for AI. |
-| **Developers prototyping** | 10 lines, 60 seconds, it runs. Your napkin sketch actually executes. |
-| **Platform teams** | Portable workflow format. The Dockerfile of agent orchestration. Share files, use any backend. |
+| **PMs & business people** | Write AI workflows without code. Describe what agents should do, paste into ChatGPT, and it runs. Your automation, your way. |
+| **Analysts & ops** | Edit and validate workflows yourself. No waiting for engineering. Review the logic, tweak parameters, run it. |
+| **Developers** | 10 lines, 60 seconds, it runs. Skip the boilerplate, hook up real tools when you need them. |
+| **Teams** | One `.slang` file everyone can read. The PM writes it, the dev ships it, the analyst audits it. Same source of truth. |
 
 ### SDK comparison
 
 | | SDK (LangChain, CrewAI) | SLANG |
 |---|---|---|
+| Who can use it | Developers only | Anyone on the team |
 | Time to first workflow | Hours | 60 seconds |
-| Who reads it | Developers only | Anyone, including LLMs |
-| Portability | Locked to language/provider | Works everywhere |
+| Who reads / reviews it | Developers only | PMs, analysts, developers, LLMs |
 | LLMs can generate it | No (boilerplate is messy) | Yes (text-to-SLANG like text-to-SQL) |
-| Runtime needed | Yes | Optional (zero-setup mode) |
-| Docs | Separate files | Built into the flow |
+| Runtime needed | Yes, always | Optional — paste into ChatGPT and it works |
+| Docs | Separate files | The `.slang` file is the documentation |
 
-SLANG isn't trying to replace SDKs. Like SQL didn't replace Java. It's a different category: declarative orchestration.
+SLANG isn't trying to replace SDKs. Like SQL didn't replace Java. It's a different category: workflows that everyone on the team can own.
 
 ---
 
