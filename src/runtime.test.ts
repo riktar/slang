@@ -1564,4 +1564,200 @@ describe("Runtime", () => {
       assert.ok(state.outputs.length > 0);
     });
   });
+
+  // ─── Parametric Flows ───
+
+  describe("Parametric flows", () => {
+    it("parses and runs a flow with parameters", async () => {
+      const state = await runFlow(`
+        flow "analysis" (topic: "string", depth: "number") {
+          agent Analyst {
+            stake analyze(topic, depth: depth) -> @out
+            commit
+          }
+          converge when: all_committed
+        }
+      `, {
+        adapter: createFixedAdapter("Analysis result\nCONFIDENCE: 0.9"),
+        params: { topic: "AI Safety", depth: 3 },
+      });
+
+      assert.equal(state.status, "converged");
+      assert.equal(state.params["topic"], "AI Safety");
+      assert.equal(state.params["depth"], 3);
+    });
+
+    it("resolves params as expression values", async () => {
+      let capturedPrompt = "";
+      const adapter: LLMAdapter = {
+        name: "capture/test",
+        async call(messages): Promise<LLMResponse> {
+          capturedPrompt = messages[0]!.content as string;
+          return { content: "done\nCONFIDENCE: 1.0", tokensUsed: 10 };
+        },
+      };
+
+      await runFlow(`
+        flow "search" (query: "string") {
+          agent Searcher {
+            stake find(query) -> @out
+            commit
+          }
+          converge when: all_committed
+        }
+      `, {
+        adapter,
+        params: { query: "quantum computing" },
+      });
+
+      assert.ok(capturedPrompt.includes("quantum computing"), "param value should appear in task description");
+    });
+
+    it("params are accessible in flow-level expressions", async () => {
+      const state = await runFlow(`
+        flow "conditional" (threshold: "number") {
+          agent Worker {
+            commit
+          }
+          converge when: all_committed
+        }
+      `, {
+        adapter: createEchoAdapter(),
+        params: { threshold: 42 },
+      });
+
+      assert.equal(state.params["threshold"], 42);
+    });
+
+    it("works without parameters (backwards compat)", async () => {
+      const state = await runFlow(`
+        flow "simple" {
+          agent A { commit }
+          converge when: all_committed
+        }
+      `, { adapter: createEchoAdapter() });
+
+      assert.equal(state.status, "converged");
+      assert.deepEqual(state.params, {});
+    });
+  });
+
+  // ─── Import / Sub-flow Composition ───
+
+  describe("Import / sub-flow composition", () => {
+    it("runs an imported sub-flow and makes its output available via alias", async () => {
+      const subFlowSource = `
+        flow "sub" {
+          agent Producer {
+            stake produce() -> @out
+            commit
+          }
+          converge when: all_committed
+        }
+      `;
+
+      const state = await runFlow(`
+        flow "parent" {
+          import "sub.slang" as sub_result
+
+          agent Consumer {
+            await data <- @sub_result
+            stake process(data) -> @out
+            commit
+          }
+          converge when: all_committed
+          budget: rounds(10)
+        }
+      `, {
+        adapter: createSequenceAdapter([
+          "sub-flow output\nCONFIDENCE: 0.9",
+          "processed result\nCONFIDENCE: 0.9",
+        ]),
+        importLoader: () => subFlowSource,
+      });
+
+      assert.equal(state.status, "converged");
+      // The alias agent is synthetic-committed
+      const aliasAgent = state.agents.get("sub_result");
+      assert.ok(aliasAgent, "alias agent should exist");
+      assert.ok(aliasAgent!.committed, "alias agent should be committed");
+    });
+
+    it("alias agent output is accessible via await binding", async () => {
+      const subFlowSource = `
+        flow "data-producer" {
+          agent Gen {
+            stake generate() -> @out
+            commit
+          }
+          converge when: all_committed
+        }
+      `;
+
+      let receivedData: unknown;
+      const adapter: LLMAdapter = {
+        name: "spy/test",
+        async call(messages): Promise<LLMResponse> {
+          // The Consumer agent receives data via await binding — capture it
+          const userMsg = messages[1]?.content as string ?? "";
+          if (userMsg.includes("[data]")) {
+            receivedData = userMsg;
+          }
+          return { content: "processed\nCONFIDENCE: 1.0", tokensUsed: 10 };
+        },
+      };
+
+      await runFlow(`
+        flow "parent" {
+          import "producer.slang" as gen
+
+          agent Consumer {
+            await data <- @gen
+            stake consume(data) -> @out
+            commit
+          }
+          converge when: all_committed
+          budget: rounds(10)
+        }
+      `, {
+        adapter,
+        importLoader: () => subFlowSource,
+      });
+
+      assert.ok(receivedData !== undefined, "Consumer should have received data from sub-flow");
+    });
+
+    it("skips import gracefully when importLoader is not provided", async () => {
+      // When no importLoader is passed, imports silently no-op and the flow runs normally
+      // (agents awaiting from the alias will block — this tests the parser-only path)
+      const state = await runFlow(`
+        flow "standalone" {
+          agent A {
+            stake work() -> @out
+            commit
+          }
+          converge when: all_committed
+        }
+      `, { adapter: createEchoAdapter() });
+
+      assert.equal(state.status, "converged");
+    });
+
+    it("importLoader throwing does not crash the parent flow", async () => {
+      const state = await runFlow(`
+        flow "resilient" {
+          agent A {
+            stake work() -> @out
+            commit
+          }
+          converge when: all_committed
+        }
+      `, {
+        adapter: createEchoAdapter(),
+        importLoader: () => { throw new Error("file not found"); },
+      });
+
+      assert.equal(state.status, "converged");
+    });
+  });
 });

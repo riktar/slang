@@ -33,7 +33,9 @@
 ## 1. Quick Reference Card
 
 ```
-flow "name" {
+flow "name" {                        -- basic flow
+flow "name" (p: "type", ...) {       -- parametric flow (p resolves as value in agents)
+  import "file.slang" as alias       -- embed sub-flow; alias = committed agent
   agent Name {
     role: "description"           -- optional: natural language role
     model: "model-name"           -- optional: LLM model to use
@@ -163,6 +165,22 @@ flow "flow-name" {
   ...body...
 }
 ```
+
+### Parametric Flows
+
+Flows can declare typed parameters to become reusable functions:
+
+```slang
+flow "analysis" (topic: "string", depth: "number") {
+  agent Analyst {
+    stake analyze(topic, depth: depth) -> @out
+    commit
+  }
+  converge when: all_committed
+}
+```
+
+Parameter type annotations (`"string"`, `"number"`, `"boolean"`) are advisory only. Values are injected at runtime via `RuntimeOptions.params`.
 
 A flow body may contain (in any order):
 - `import` statements — include external flows
@@ -589,21 +607,39 @@ In addition to `deliver`, the runtime supports an `onConverge` callback (set via
 
 ### `import`
 
-Import another `.slang` file to use as a sub-flow:
+Import another `.slang` file and run it as an embedded sub-flow. The imported flow executes **before** the parent flow's main loop. Its final output is exposed as a **synthetic committed agent** named by the alias — any parent agent can receive the result with `await`:
 
 ```slang
 flow "full-report" {
-  import "research.slang" as research
-  import "analysis.slang" as analysis
+  import "research.slang" as research    -- runs sub-flow to completion
 
-  agent Orchestrator {
-    stake run(research, topic: "AI market") -> @Compiler
-    stake run(analysis, data: @Researcher.output) -> @Compiler
+  agent Editor {
+    await findings <- @research           -- receive sub-flow output via alias
+    stake edit(findings, format: "markdown") -> @out
+    commit
   }
 
-  agent Compiler {
-    await results <- @Orchestrator (count: 2)
-    stake compile(results) -> @out
+  converge when: all_committed
+  budget: tokens(300000), rounds(20)
+}
+```
+
+**How it works:**
+- Requires `importLoader` in `RuntimeOptions` — a callback that receives the path string and returns source code
+- The sub-flow runs with the same adapter and tools as the parent
+- The sub-flow's `@out` outputs (or committed agent outputs) become the alias agent's output
+- If `importLoader` is not provided or throws, the import is silently skipped
+- The alias is visible in `state.agents` as a committed agent
+
+**Combining import with parametric flows:**
+
+```slang
+flow "pipeline" (topic: "string") {
+  import "gather.slang" as data
+
+  agent Writer {
+    await raw <- @data
+    stake write(raw, about: topic) -> @out  -- topic from flow params
     commit
   }
 
@@ -855,11 +891,15 @@ DIGIT       = "0"-"9" ;
 (* Top-level *)
 program         = { flow_decl } ;
 
-flow_decl       = "flow" STRING "{" flow_body "}" ;
+flow_decl       = "flow" STRING [ flow_params ] "{" flow_body "}" ;
+
+(* Parametric flow parameters *)
+flow_params     = "(" flow_param { "," flow_param } ")" ;
+flow_param      = IDENT ":" STRING ;
 
 flow_body       = { import_stmt | agent_decl | converge_stmt | budget_stmt | deliver_stmt | expect_stmt } ;
 
-(* Import *)
+(* Import: sub-flow composition *)
 import_stmt     = "import" STRING "as" IDENT ;
 
 (* Deliver *)

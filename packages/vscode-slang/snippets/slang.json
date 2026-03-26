@@ -169,5 +169,18 @@
       "}"
     ],
     "description": "Research flow with Researcher → Analyst pattern"
+  },
+  "Flow with parameters": {
+    "prefix": "flow-params",
+    "body": [
+      "flow \"${1:name}\" (${2:param}: \"${3:string}\") {",
+      "  agent ${4:Agent} {",
+      "    role: \"${5:description}\"",
+      "    $0",
+      "  }",
+      "  converge when: all_committed",
+      "}"
+    ],
+    "description": "SLANG parametric flow with typed parameters"
   }
 }

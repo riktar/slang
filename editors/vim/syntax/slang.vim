@@ -50,7 +50,7 @@ syn match slangAgentRef /@[A-Za-z_][A-Za-z0-9_]*/
 syn match slangAgentDecl /\<agent\s\+\zs[A-Z][A-Za-z0-9_]*/
 
 " ─── Flow name ───
-syn match slangFlowName /\<flow\s\+\zs"[^"]*"/
+syn match slangFlowName /\<flow\s\+\zs"[^"]*"\(\s*([^)]*)\)\?/
 
 " ─── Operators ───
 syn match slangArrow /->/

@@ -34,11 +34,16 @@ flow "name" {
     repeat until expr { ... }       -- loop
   }
 
+  import "file.slang" as alias    -- embed sub-flow (alias = committed agent)
   converge when: condition        -- flow termination
   budget: tokens(N), rounds(N)   -- resource limits
   deliver: handler(args)         -- post-convergence side effect
   expect expr                    -- test assertion
 }
+
+-- Parametric flow:
+flow "name" (param: "string", count: "number") { ... }
+-- Parameters are injected via RuntimeOptions.params and resolve as values in agents
 ```
 
 ## The 3 Primitives
@@ -245,6 +250,41 @@ flow "local" {
   }
   converge when: all_committed
 }
+```
+
+### 5. Parametric Flow (reusable function)
+```slang
+flow "analysis" (topic: "string", depth: "number") {
+  agent Analyst {
+    role: "expert analyst"
+    stake analyze(topic, depth: depth) -> @Writer
+    commit
+  }
+  agent Writer {
+    await findings <- @Analyst
+    stake write(findings) -> @out
+    commit
+  }
+  converge when: all_committed
+}
+-- Call with: runFlow(source, { adapter, params: { topic: "AI", depth: 3 } })
+```
+
+### 6. Import / Sub-flow Composition
+```slang
+flow "full-report" {
+  import "research.slang" as research   -- sub-flow runs to completion before parent starts
+
+  agent Editor {
+    await findings <- @research          -- receive sub-flow output via alias
+    stake edit(findings, format: "markdown") -> @out
+    commit
+  }
+
+  converge when: all_committed
+  budget: tokens(300000), rounds(20)
+}
+-- Requires: importLoader in RuntimeOptions
 ```
 
 ## Design Principles

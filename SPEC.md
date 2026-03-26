@@ -30,6 +30,21 @@ flow "name" {
 }
 ```
 
+Flows can optionally declare **typed parameters**, turning the flow into a reusable function:
+
+```slang
+flow "analysis" (topic: "string", depth: "number") {
+  agent Analyst {
+    stake analyze(topic, depth: depth) -> @out  -- parameters are resolved as values
+    commit
+  }
+  converge when: all_committed
+}
+```
+
+Parameter types (`"string"`, `"number"`, `"boolean"`) are advisory; the runtime does not enforce them.  
+Values are passed via `RuntimeOptions.params` when calling `runFlow`.
+
 A flow contains:
 - One or more `agent` declarations
 - Optional `converge` condition
@@ -324,23 +339,43 @@ When budget is exhausted, the flow terminates with a `budget_exceeded` status an
 
 #### `import`
 
-Import another flow to use as a sub-flow:
+Import another `.slang` file and run it as an embedded sub-flow. The sub-flow executes to completion before the parent flow's main loop begins. Its output is exposed as a **synthetic committed agent** named by the alias — any parent agent can receive the result using `await`.
 
 ```slang
 flow "full-report" {
-  import "research" as research_flow
-  import "analysis" as analysis_flow
+  import "research.slang" as research    -- runs sub-flow; alias = committed agent
 
-  agent Orchestrator {
-    stake run(research_flow, topic: "AI market") -> @Compiler
-    stake run(analysis_flow, data: @Researcher.output) -> @Compiler
-  }
-
-  agent Compiler {
-    await results <- @Orchestrator (count: 2)
-    stake compile(results) -> @out
+  agent Editor {
+    await findings <- @research            -- receive sub-flow output
+    stake edit(findings, format: "markdown") -> @out
     commit
   }
+
+  converge when: all_committed
+  budget: tokens(300000), rounds(20)
+}
+```
+
+**Runtime behaviour:**
+1. `importLoader(path)` callback is invoked with the literal path string.
+2. The sub-flow is fully executed with the same adapter and tools.
+3. The sub-flow's `@out` outputs (or last committed agent outputs) become the alias agent's output.
+4. The alias is registered as a committed agent in the parent flow state.
+5. If no `importLoader` is provided, the `import` statement is silently skipped.
+
+**Combining with parametric flows:**
+
+```slang
+flow "pipeline" (topic: "string") {
+  import "gather.slang" as data
+
+  agent Writer {
+    await raw <- @data
+    stake write(raw, topic: topic) -> @out
+    commit
+  }
+
+  converge when: all_committed
 }
 ```
 

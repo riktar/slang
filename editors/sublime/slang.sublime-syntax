@@ -60,10 +60,11 @@ contexts:
         2: entity.name.type.agent.slang
 
   flow-decl:
-    - match: '\b(flow)\s+("[^"]*")'
+    - match: '\b(flow)\s+("[^"]*")(?:\s*(\([^)]*\)))?'
       captures:
         1: keyword.control.flow.slang
         2: string.quoted.double.slang
+        3: meta.parameters.slang
 
   primitives:
     - match: '\b(stake|await|commit|escalate)\b'

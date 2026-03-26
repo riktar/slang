@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Parametric flows** — flows can declare typed parameters: `flow "analysis" (topic: "string", depth: "number") { ... }`. Parameters resolve as values in agent expressions and are injected via `RuntimeOptions.params`. Parameter types are advisory; the runtime does not enforce them.
+- **Functional import** — `import "file.slang" as alias` now fully works at runtime. The imported sub-flow runs to completion before the parent flow's main loop. Its output is exposed as a synthetic committed agent named by the alias, enabling `await data <- @alias` in parent agents. Requires `RuntimeOptions.importLoader` callback.
+- `FlowParam` AST node type exported from `src/ast.ts`
+- `params` field on `FlowState` — accessible after `runFlow` to inspect injected parameters
+- `importLoader?: (path: string) => string | Promise<string>` in `RuntimeOptions`
+- `params?: Record<string, unknown>` in `RuntimeOptions`
+- New examples: `examples/parametric.slang`, `examples/import-composition.slang`
+
 ### Changed
 
 - **Documentation restructuring** — moved detailed guides to `docs/` folder for improved organization:

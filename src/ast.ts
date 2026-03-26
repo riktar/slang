@@ -27,7 +27,15 @@ export interface Program extends BaseNode {
 export interface FlowDecl extends BaseNode {
   type: "FlowDecl";
   name: string;
+  /** Optional typed parameters: `flow "name" (param: "type") { ... }` */
+  params?: FlowParam[];
   body: FlowBodyItem[];
+}
+
+export interface FlowParam {
+  name: string;
+  /** Advisory type annotation ("string" | "number" | "boolean"), not enforced at runtime */
+  paramType: string;
 }
 
 export type FlowBodyItem = ImportStmt | AgentDecl | ConvergeStmt | BudgetStmt | DeliverStmt | ExpectStmt;

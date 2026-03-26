@@ -9,7 +9,7 @@ import type { LLMAdapter, LLMMessage } from "./adapter.js";
 import type {
   FlowDecl, AgentDecl, Operation, StakeOp, AwaitOp,
   CommitOp, EscalateOp, WhenBlock, LetOp, SetOp, RepeatBlock,
-  FuncCall, Argument, DeliverStmt, ExpectStmt,
+  FuncCall, Argument, DeliverStmt, ExpectStmt, ImportStmt,
   Expr, ConvergeStmt, BudgetStmt, BudgetItem,
 } from "./ast.js";
 
@@ -62,6 +62,8 @@ export interface FlowState {
   status: "running" | "converged" | "budget_exceeded" | "escalated" | "deadlock";
   /** data staked between agents: key = "Source->Target" */
   mailbox: Map<string, unknown>;
+  /** flow-level parameters injected at startup */
+  params: Record<string, unknown>;
 }
 
 export type ToolHandler = (args: Record<string, unknown>) => Promise<string>;
@@ -84,6 +86,10 @@ export interface RuntimeOptions {
   onConverge?: (state: FlowState) => void | Promise<void>;
   /** deliver handler implementations — keys match handler names used in `deliver:` statements */
   deliverers?: Record<string, DeliverHandler>;
+  /** flow parameters matched against `flow "name" (param: "type") { ... }` declarations */
+  params?: Record<string, unknown>;
+  /** loader for imported sub-flows — receives the path string from `import "path" as alias` */
+  importLoader?: (path: string) => string | Promise<string>;
 }
 
 export type RuntimeEvent =
@@ -121,7 +127,7 @@ export async function runFlow(source: string, options: RuntimeOptions): Promise<
 }
 
 async function executeFlow(flow: FlowDecl, options: RuntimeOptions): Promise<FlowState> {
-  const { adapter, onEvent, parallel = true, checkpoint, resumeFrom, tools, onConverge, deliverers } = options;
+  const { adapter, onEvent, parallel = true, checkpoint, resumeFrom, tools, onConverge, deliverers, params: inputParams = {}, importLoader } = options;
   const depGraph = resolveDeps(flow);
   const deadlocks = detectDeadlocks(depGraph);
 
@@ -141,7 +147,7 @@ async function executeFlow(flow: FlowDecl, options: RuntimeOptions): Promise<Flo
   // Initialize state (or resume from checkpoint)
   const state: FlowState = resumeFrom
     ? { ...cloneFlowState(resumeFrom), status: "running" }
-    : createState(flow, "running");
+    : createState(flow, "running", inputParams);
 
   if (!resumeFrom) {
     for (const agent of agentDecls) {
@@ -154,6 +160,13 @@ async function executeFlow(flow: FlowDecl, options: RuntimeOptions): Promise<Flo
         variables: {},
         committed: false,
       });
+    }
+    // Execute imports — each imported sub-flow becomes a synthetic committed agent
+    if (importLoader) {
+      const importStmts = flow.body.filter((n): n is ImportStmt => n.type === "ImportStmt");
+      for (const importStmt of importStmts) {
+        await executeImport(importStmt, state, options);
+      }
     }
   }
 
@@ -400,7 +413,7 @@ async function executeStake(
     return "continue";
   }
 
-  const taskDescription = serializeFuncCall(op.call, agentState);
+  const taskDescription = serializeFuncCall(op.call, agentState, flowState);
   onEvent?.({ type: "agent_start", agent: agentDecl.name, operation: taskDescription });
 
   // Determine which tools are available for this agent
@@ -620,6 +633,80 @@ async function executeRepeat(
   return "continue";
 }
 
+// ─── Import Execution ───
+
+/**
+ * Execute an imported sub-flow and register its result as a synthetic committed
+ * agent in the parent flow. Parent agents can then `await data <- @alias` to
+ * receive the sub-flow's output.
+ */
+async function executeImport(
+  importStmt: ImportStmt,
+  parentState: FlowState,
+  options: RuntimeOptions,
+): Promise<void> {
+  if (!options.importLoader) return;
+
+  let source: string;
+  try {
+    source = await options.importLoader(importStmt.path);
+  } catch {
+    // Import loader failed — skip so the parent flow continues
+    return;
+  }
+
+  const program = parse(source);
+  if (program.flows.length === 0) return;
+
+  const subflow = program.flows[0]!;
+
+  // Run sub-flow with shared adapter/tools but isolated state
+  const subOptions: RuntimeOptions = {
+    adapter: options.adapter,
+    tools: options.tools,
+    onEvent: options.onEvent,
+    parallel: options.parallel,
+    // Deliberately omit: checkpoint, resumeFrom, onConverge, deliverers, importLoader
+  };
+
+  const subState = await executeFlow(subflow, subOptions);
+
+  // Collect sub-flow output: prefer @out outputs, else collect committed agent outputs
+  let output: unknown;
+  if (subState.outputs.length > 0) {
+    output = subState.outputs.length === 1 ? subState.outputs[0] : subState.outputs;
+  } else {
+    const committedOutputs: Record<string, unknown> = {};
+    for (const [name, agentSt] of subState.agents) {
+      if (agentSt.committed && agentSt.output != null) {
+        committedOutputs[name] = agentSt.output;
+      }
+    }
+    const keys = Object.keys(committedOutputs);
+    output = keys.length === 1
+      ? committedOutputs[keys[0]!]
+      : keys.length > 1 ? committedOutputs : undefined;
+  }
+
+  // Register alias as a synthetic committed agent in the parent flow
+  parentState.agents.set(importStmt.alias, {
+    name: importStmt.alias,
+    status: "committed",
+    opIndex: 0,
+    output,
+    bindings: {},
+    variables: {},
+    committed: true,
+  });
+
+  // Pre-populate mailbox so any parent agent can `await data <- @alias`
+  for (const [agentName] of parentState.agents) {
+    if (agentName !== importStmt.alias) {
+      parentState.mailbox.set(`${importStmt.alias}->${agentName}`, output);
+    }
+  }
+}
+
 // ─── Helpers ───
 
 function findExecutableAgents(agentDecls: AgentDecl[], state: FlowState): AgentDecl[] {
@@ -657,6 +744,12 @@ function buildAgentPrompt(
   let system = `You are agent "${agentDecl.name}" in a SLANG multi-agent workflow "${flowState.name}".`;
   if (agentDecl.meta.role) {
     system += `\nYour role: ${agentDecl.meta.role}`;
+  }
+  if (Object.keys(flowState.params).length > 0) {
+    system += `\n\nFlow parameters:`;
+    for (const [key, value] of Object.entries(flowState.params)) {
+      system += `\n  ${key}: ${typeof value === "string" ? `"${value}"` : JSON.stringify(value)}`;
+    }
   }
   system += `\n\nYour task: ${taskDescription}`;
   system += `\n\nRespond with substantive, real content. Be thorough and precise.`;
@@ -704,19 +797,19 @@ function buildAgentPrompt(
   ];
 }
 
-function serializeFuncCall(call: FuncCall, agentState: AgentState): string {
+function serializeFuncCall(call: FuncCall, agentState: AgentState, flowState?: FlowState): string {
   const args = call.args.map((arg) => {
-    const val = serializeArgValue(arg, agentState);
+    const val = serializeArgValue(arg, agentState, flowState);
     return arg.name ? `${arg.name}: ${val}` : val;
   });
   return `${call.name}(${args.join(", ")})`;
 }
 
-function serializeArgValue(arg: Argument, agentState: AgentState): string {
-  return exprToString(arg.value, agentState);
+function serializeArgValue(arg: Argument, agentState: AgentState, flowState?: FlowState): string {
+  return exprToString(arg.value, agentState, flowState);
 }
 
-function exprToString(expr: Expr, agentState: AgentState): string {
+function exprToString(expr: Expr, agentState: AgentState, flowState?: FlowState): string {
   switch (expr.type) {
     case "StringLit": return `"${expr.value}"`;
     case "NumberLit": return String(expr.value);
@@ -730,12 +823,16 @@ function exprToString(expr: Expr, agentState: AgentState): string {
         const val = agentState.bindings[expr.name];
         return typeof val === "string" ? val : JSON.stringify(val);
       }
+      if (flowState && expr.name in flowState.params) {
+        const val = flowState.params[expr.name];
+        return typeof val === "string" ? val : JSON.stringify(val);
+      }
       return expr.name;
     }
     case "AgentRef": return `@${expr.name}`;
-    case "ListLit": return `[${expr.elements.map((e) => exprToString(e, agentState)).join(", ")}]`;
-    case "DotAccess": return `${exprToString(expr.object, agentState)}.${expr.property}`;
-    case "BinaryExpr": return `${exprToString(expr.left, agentState)} ${expr.op} ${exprToString(expr.right, agentState)}`;
+    case "ListLit": return `[${expr.elements.map((e) => exprToString(e, agentState, flowState)).join(", ")}]`;
+    case "DotAccess": return `${exprToString(expr.object, agentState, flowState)}.${expr.property}`;
+    case "BinaryExpr": return `${exprToString(expr.left, agentState, flowState)} ${expr.op} ${exprToString(expr.right, agentState, flowState)}`;
   }
 }
 
@@ -759,6 +856,7 @@ function resolveExprValue(expr: Expr, agentState: AgentState, flowState: FlowSta
       if (expr.name === "round") return flowState.round;
       if (expr.name in agentState.variables) return agentState.variables[expr.name];
       if (expr.name in agentState.bindings) return agentState.bindings[expr.name];
+      if (expr.name in flowState.params) return flowState.params[expr.name];
       return undefined;
     }
     case "AgentRef": {
@@ -832,7 +930,7 @@ function evalConvergence(converge: ConvergeStmt, state: FlowState): boolean {
   return !!resolveExprValue(converge.condition, dummyAgent, state);
 }
 
-function createState(flow: FlowDecl, status: FlowState["status"]): FlowState {
+function createState(flow: FlowDecl, status: FlowState["status"], params: Record<string, unknown> = {}): FlowState {
   return {
     name: flow.name,
     round: 0,
@@ -841,6 +939,7 @@ function createState(flow: FlowDecl, status: FlowState["status"]): FlowState {
     outputs: [],
     status,
     mailbox: new Map(),
+    params,
   };
 }
 

@@ -25,7 +25,10 @@ DIGIT       = "0"-"9" ;
 ```ebnf
 program         = { flow_decl } ;
 
-flow_decl       = "flow" STRING "{" flow_body "}" ;
+flow_decl       = "flow" STRING [ flow_params ] "{" flow_body "}" ;
+
+flow_params     = "(" flow_param { "," flow_param } ")" ;
+flow_param      = IDENT ":" STRING ;
 
 flow_body       = { import_stmt | agent_decl | converge_stmt | budget_stmt | deliver_stmt | expect_stmt } ;
 

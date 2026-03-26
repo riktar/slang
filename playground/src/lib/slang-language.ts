@@ -70,8 +70,8 @@ export const monarchTokensProvider: monaco.languages.IMonarchLanguage = {
       // Agent references (general)
       [/@[A-Za-z_][A-Za-z0-9_]*/, 'variable.agent-ref'],
 
-      // flow "name" pattern
-      [/\b(flow)\s+("(?:[^"\\]|\\.)*")/, ['keyword.flow', 'string']],
+      // flow "name" (params) pattern
+      [/\b(flow)\s+("(?:[^"\\]|\\.)*")(?:\s*(\([^)]*\)))?/, ['keyword.flow', 'string', 'meta.parameters']],
       // agent Name pattern
       [/\b(agent)\s+([A-Z][a-zA-Z0-9_]*)/, ['keyword.flow', 'type.agent']],
 

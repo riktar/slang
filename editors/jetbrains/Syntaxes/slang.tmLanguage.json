@@ -25,10 +25,11 @@
     "flow": {
       "patterns": [
         {
-          "match": "\\b(flow)\\s+(\"[^\"]*\")",
+          "match": "\\b(flow)\\s+(\"[^\"]*\")(?:\\s*(\\([^)]*\\)))?",
           "captures": {
             "1": { "name": "keyword.control.flow.slang" },
-            "2": { "name": "string.quoted.double.slang" }
+            "2": { "name": "string.quoted.double.slang" },
+            "3": { "name": "meta.parameters.slang" }
           }
         },
         {

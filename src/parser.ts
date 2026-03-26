@@ -4,6 +4,7 @@ import { Token, TokenType, tokenize, LexerError } from "./lexer.js";
 import { SlangError, SlangErrorCode, formatErrorMessage } from "./errors.js";
 import type {
   Program, FlowDecl, FlowBodyItem, ImportStmt,
+  FlowParam,
   AgentDecl, AgentMeta, Operation, StakeOp, AwaitOp,
   CommitOp, EscalateOp, WhenBlock, ElseBlock, LetOp, SetOp, RepeatBlock,
   FuncCall, Argument,
@@ -125,10 +126,39 @@ class Parser {
   private parseFlowDecl(): FlowDecl {
     const start = this.expect(TokenType.Flow);
     const name = this.expect(TokenType.String).value;
+
+    // Optional parameter list: flow "name" (param: "type", ...) { ... }
+    let params: FlowParam[] | undefined;
+    if (this.check(TokenType.LParen)) {
+      params = this.parseFlowParams();
+    }
+
     this.expect(TokenType.LBrace);
     const body = this.parseFlowBody();
     const end = this.expect(TokenType.RBrace);
-    return { type: "FlowDecl", name, body, span: this.spanFrom(start, end) };
+    return { type: "FlowDecl", name, params, body, span: this.spanFrom(start, end) };
+  }
+
+  private parseFlowParams(): FlowParam[] {
+    this.expect(TokenType.LParen);
+    const params: FlowParam[] = [];
+    if (!this.check(TokenType.RParen)) {
+      params.push(this.parseFlowParam());
+      while (this.match(TokenType.Comma)) {
+        if (!this.check(TokenType.RParen)) {
+          params.push(this.parseFlowParam());
+        }
+      }
+    }
+    this.expect(TokenType.RParen);
+    return params;
+  }
+
+  private parseFlowParam(): FlowParam {
+    const name = this.expect(TokenType.Ident).value;
+    this.expect(TokenType.Colon);
+    const paramType = this.expect(TokenType.String).value;
+    return { name, paramType };
   }
 
   private parseFlowBody(): FlowBodyItem[] {

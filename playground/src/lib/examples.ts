@@ -156,4 +156,23 @@ flow "deadlock" {
   converge when: all_committed
 }`,
   },
+  parametric: {
+    name: "Parametric Flow",
+    source: `flow "analysis" (topic: "string", depth: "number") {
+  agent Researcher {
+    role: "Research the given topic thoroughly"
+    tools: [web_search]
+    stake gather(topic) -> @Analyst
+  }
+
+  agent Analyst {
+    role: "Analyze findings with specified depth"
+    await data <- @Researcher
+    stake analyze(data, depth: depth) -> @out
+    commit
+  }
+
+  converge when: all_committed
+}`,
+  },
 };

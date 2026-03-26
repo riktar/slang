@@ -35,6 +35,7 @@ import type {
   Program,
   FlowDecl,
   AgentDecl,
+  ImportStmt,
   Span,
   ParseResult,
   FlowDiagnostic,
@@ -267,7 +268,7 @@ connection.onHover((params: TextDocumentPositionParams): Hover | null => {
     await: "**await** — Block until data arrives from a source agent.\n\n`await binding <- @Source`",
     commit: "**commit** — Accept the result and stop this agent.\n\n`commit [value] [if condition]`",
     escalate: "**escalate** — Reject and delegate to another agent.\n\n`escalate @Target [reason: \"...\"] [if condition]`",
-    flow: "**flow** — Top-level workflow declaration.\n\n`flow \"name\" { ... }`",
+    flow: "**flow** — Top-level workflow declaration.\n\n`flow \"name\" { ... }`\n`flow \"name\" (param: \"type\", ...) { ... }` (parametric)",
     agent: "**agent** — Declare an autonomous agent.\n\n`agent Name { ... }`",
     converge: "**converge** — Define when the flow should stop.\n\n`converge when: condition`",
     budget: "**budget** — Set resource limits.\n\n`budget: tokens(N), rounds(N), time(N)`",
@@ -355,11 +356,23 @@ connection.onDocumentSymbol((params): DocumentSymbol[] => {
           range: spanToRange(item.span),
           selectionRange: spanToRange(item.span),
         });
+      } else if (item.type === "ImportStmt") {
+        const imp = item as ImportStmt;
+        flowChildren.push({
+          name: `import "${imp.path}" as ${imp.alias}`,
+          kind: SymbolKind.Module,
+          range: spanToRange(item.span),
+          selectionRange: spanToRange(item.span),
+        });
       }
     }
 
+    const paramsSuffix = flow.params?.length
+      ? ` (${flow.params.map((p: { name: string; paramType: string }) => `${p.name}: "${p.paramType}"`).join(", ")})`
+      : "";
+
     symbols.push({
-      name: `flow "${flow.name}"`,
+      name: `flow "${flow.name}"${paramsSuffix}`,
       kind: SymbolKind.Module,
       range: spanToRange(flow.span),
       selectionRange: spanToRange(flow.span),

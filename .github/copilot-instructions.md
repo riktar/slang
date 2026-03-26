@@ -12,6 +12,7 @@ After making changes to the codebase, update the following artifacts (if necessa
 - **Specification**: Update [SPEC.md](../SPEC.md) to reflect syntax or behavioral changes
 - **Grammar**: Update [GRAMMAR.md](../GRAMMAR.md) for any grammar/syntax modifications
 - **Documentation**: Update relevant [docs/](../docs/) and inline code comments
+- **Skill Files**: Update relevant skill files in `.claude/skills/` if the change affects agent behavior
 - **Readme**: Update [README.md](../README.md) relavant sections if the feature can be "selled" to other user
 - **Examples**: Add or update examples in the `examples/` directory
 - **Changelog**: Update the changelog
@@ -93,6 +94,7 @@ When submitting changes, ensure:
 - ✅ All tests pass and new tests are added
 - ✅ `GRAMMAR.md` reflects any syntax changes
 - ✅ `SPEC.md` is updated with behavioral changes
+- ✅ `slang skill SKILL.md` is updated with behavioral changes
 - ✅ Examples are provided or updated
 - ✅ Documentation is comprehensive
 - ✅ Complexity justified against minimalism principle
