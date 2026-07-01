@@ -54,7 +54,7 @@ class Parser {
     private tokens: Token[],
     private source: string,
     private recovering: boolean,
-  ) {}
+  ) { }
 
   // ─── Token Helpers ───
 
@@ -273,15 +273,15 @@ class Parser {
       case TokenType.When: return this.parseWhenBlock();
       case TokenType.Let:
         if (this.tokens[this.pos + 1]?.type === TokenType.Ident &&
-            this.tokens[this.pos + 2]?.type === TokenType.Eq &&
-            this.tokens[this.pos + 3]?.type === TokenType.Stake) {
+          this.tokens[this.pos + 2]?.type === TokenType.Eq &&
+          this.tokens[this.pos + 3]?.type === TokenType.Stake) {
           return this.parseBindingStakeOp();
         }
         return this.parseLetOp();
       case TokenType.Set:
         if (this.tokens[this.pos + 1]?.type === TokenType.Ident &&
-            this.tokens[this.pos + 2]?.type === TokenType.Eq &&
-            this.tokens[this.pos + 3]?.type === TokenType.Stake) {
+          this.tokens[this.pos + 2]?.type === TokenType.Eq &&
+          this.tokens[this.pos + 3]?.type === TokenType.Stake) {
           return this.parseBindingStakeOp();
         }
         return this.parseSetOp();
@@ -411,14 +411,31 @@ class Parser {
   }
 
   private parseAwaitOptions(options: Record<string, Expr>): void {
-    const key = this.expect(TokenType.Ident).value;
+    const key = this.parseAwaitOptionKey();
     this.expect(TokenType.Colon);
     options[key] = this.parseExpr();
     while (this.match(TokenType.Comma)) {
-      const k = this.expect(TokenType.Ident).value;
+      const k = this.parseAwaitOptionKey();
       this.expect(TokenType.Colon);
       options[k] = this.parseExpr();
     }
+  }
+
+  private parseAwaitOptionKey(): string {
+    const token = this.peek();
+    if (token.type === TokenType.Ident || token.type === TokenType.Count) {
+      return this.advance().value;
+    }
+
+    const err = new ParseError(
+      SlangErrorCode.P201,
+      formatErrorMessage(SlangErrorCode.P201, { expected: "Ident", got: token.type }),
+      token, this.source,
+    );
+    if (!this.recovering) throw err;
+    this.errors.push(err);
+    this.advance();
+    return "";
   }
 
   // ─── Commit ───
@@ -434,7 +451,7 @@ class Parser {
     // commit if <expr>   — shorthand for commit with only condition
 
     if (!this.check(TokenType.RBrace) && !this.check(TokenType.EOF) &&
-        !this.isOperationStart() && !this.check(TokenType.If)) {
+      !this.isOperationStart() && !this.check(TokenType.If)) {
       value = this.parseExpr();
     }
     condition = this.parseOptionalCondition();
@@ -571,9 +588,22 @@ class Parser {
     }
 
     this.expect(TokenType.LParen);
-    const value = this.parseExpr();
+    const value = kind === "time" ? this.parseTimeBudgetValue() : this.parseExpr();
     this.expect(TokenType.RParen);
     return { kind, value };
+  }
+
+  private parseTimeBudgetValue(): Expr {
+    const value = this.parseExpr();
+    if (value.type !== "NumberLit") {
+      return value;
+    }
+
+    if (this.check(TokenType.Ident) && this.peek().value.toLowerCase() === "s") {
+      this.advance();
+    }
+
+    return value;
   }
 
   // ─── Deliver ───
@@ -687,22 +717,22 @@ class Parser {
 
   private isKeywordToken(type: TokenType): boolean {
     return type === TokenType.Output || type === TokenType.Role ||
-           type === TokenType.Model || type === TokenType.Tools ||
-           type === TokenType.Tokens || type === TokenType.Rounds ||
-           type === TokenType.Time || type === TokenType.Count ||
-           type === TokenType.Reason || type === TokenType.Retry ||
-           type === TokenType.Budget || type === TokenType.Commit ||
-           type === TokenType.Stake || type === TokenType.Await ||
-           type === TokenType.Agent || type === TokenType.Flow ||
-           type === TokenType.Deliver || type === TokenType.Expect ||
-           type === TokenType.Contains || type === TokenType.True ||
-           type === TokenType.False || type === TokenType.Set ||
-           type === TokenType.Let || type === TokenType.When ||
-           type === TokenType.If || type === TokenType.Else ||
-           type === TokenType.Otherwise || type === TokenType.Converge ||
-           type === TokenType.Import || type === TokenType.As ||
-           type === TokenType.Escalate || type === TokenType.Repeat ||
-           type === TokenType.Until;
+      type === TokenType.Model || type === TokenType.Tools ||
+      type === TokenType.Tokens || type === TokenType.Rounds ||
+      type === TokenType.Time || type === TokenType.Count ||
+      type === TokenType.Reason || type === TokenType.Retry ||
+      type === TokenType.Budget || type === TokenType.Commit ||
+      type === TokenType.Stake || type === TokenType.Await ||
+      type === TokenType.Agent || type === TokenType.Flow ||
+      type === TokenType.Deliver || type === TokenType.Expect ||
+      type === TokenType.Contains || type === TokenType.True ||
+      type === TokenType.False || type === TokenType.Set ||
+      type === TokenType.Let || type === TokenType.When ||
+      type === TokenType.If || type === TokenType.Else ||
+      type === TokenType.Otherwise || type === TokenType.Converge ||
+      type === TokenType.Import || type === TokenType.As ||
+      type === TokenType.Escalate || type === TokenType.Repeat ||
+      type === TokenType.Until;
   }
 
   private parsePrimary(): Expr {
@@ -781,9 +811,9 @@ class Parser {
   private isOperationStart(): boolean {
     const t = this.peek().type;
     return t === TokenType.Stake || t === TokenType.Await ||
-           t === TokenType.Commit || t === TokenType.Escalate ||
-           t === TokenType.When || t === TokenType.Let ||
-           t === TokenType.Set || t === TokenType.Repeat;
+      t === TokenType.Commit || t === TokenType.Escalate ||
+      t === TokenType.When || t === TokenType.Let ||
+      t === TokenType.Set || t === TokenType.Repeat;
   }
 
   /** Advance tokens until we reach one of the synchronization points */

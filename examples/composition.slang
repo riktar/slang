@@ -1,24 +1,21 @@
--- Flow composition with import
--- Features: import ... as, count on await, orchestration of multiple sub-flows
+-- Flow composition with import and wait-all fan-in
+-- Features: import ... as, multi-source await, orchestration of reusable sub-flows
 -- Run with: slang run composition.slang --adapter openrouter --api-key $OPENROUTER_API_KEY
 --
--- Import other .slang files as sub-flows and run them within
--- a parent flow. The Orchestrator launches two sub-flows,
--- and the Compiler awaits both results before producing output.
+-- Import other .slang files as sub-flows and use their aliased outputs
+-- as inputs to a parent flow. This example reuses existing example
+-- flows and waits for both imported results before producing output.
 
-flow "full-report" {
-  import "research" as research_flow
-  import "article" as article_flow
-
-  agent Orchestrator {
-    stake run(research_flow, topic: "AI agents market 2026") -> @Compiler
-    stake run(article_flow, topic: "Executive summary") -> @Compiler
-  }
+flow "composed-report" {
+  import "hello.slang" as greeting
+  import "local-stake.slang" as article
 
   agent Compiler {
-    await results <- @Orchestrator (count: 2)
-    stake compile(results, format: "executive briefing") -> @out
+    await parts <- @greeting, @article
+    stake compile(parts, format: "executive briefing") -> @out
+    commit
   }
 
   converge when: all_committed
+  budget: rounds(20), time(60s)
 }

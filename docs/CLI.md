@@ -1,10 +1,11 @@
 # CLI
 
-Command-line interface for SLANG. Initialize projects, run flows, parse, and check for deadlocks.
+Command-line interface for SLANG. Initialize projects, run flows, run `.slang` tests, parse, and check for deadlocks.
 
 ```bash
 slang init [dir]             # Scaffold a new project
 slang run <file.slang>       # Execute a flow
+slang test <file.slang>      # Execute a flow as a test with `expect` assertions
 slang parse <file.slang>     # Dump AST
 slang check <file.slang>     # Dependency analysis + deadlock detection
 slang prompt                 # Print the zero-setup system prompt
@@ -23,6 +24,12 @@ slang playground             # Launch the web playground
 | `--deliverers` | JS file with deliver handlers (post-convergence side effects) |
 | `--debug` | Show full round-by-round agent output (silent by default) |
 | `--port` | Playground port (default `5174`) |
+
+## Notes
+
+- `slang run` and `slang test` execute exactly one top-level `flow`. If the source contains multiple flows, execution fails explicitly instead of silently picking the first one.
+- CLI imports are resolved relative to the `.slang` file that declares them. Nested imports are supported.
+- `import "child" as alias` and `import "child.slang" as alias` both work in the CLI.
 
 ## Environment Variables
 

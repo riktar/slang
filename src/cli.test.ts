@@ -256,3 +256,115 @@ describe("CLI: --debug flag", () => {
   });
 });
 
+// ─── import composition ───
+
+describe("CLI: import composition", () => {
+  const tmpDir = join(import.meta.dirname, "../.test-imports-" + process.pid);
+
+  beforeEach(() => {
+    mkdirSync(join(tmpDir, "sub"), { recursive: true });
+  });
+
+  afterEach(() => {
+    if (existsSync(tmpDir)) rmSync(tmpDir, { recursive: true });
+  });
+
+  it("resolves imports relative to the calling file", () => {
+    writeFileSync(
+      join(tmpDir, "main.slang"),
+      `flow "main" {
+  import "./sub/research.slang" as research
+
+  agent Editor {
+    await findings <- @research
+    stake edit(findings) -> @out
+    commit
+  }
+
+  converge when: all_committed
+  budget: rounds(10)
+}`,
+    );
+    writeFileSync(
+      join(tmpDir, "sub/research.slang"),
+      `flow "research" {
+  agent Researcher {
+    stake gather() -> @out
+    commit
+  }
+  converge when: all_committed
+}`,
+    );
+
+    const out = run(["run", "main.slang", "--adapter", "echo"], tmpDir);
+    assert.ok(out.includes("FLOW CONVERGED"));
+  });
+
+  it("supports nested imports from imported files", () => {
+    writeFileSync(
+      join(tmpDir, "main.slang"),
+      `flow "main" {
+  import "./sub/child.slang" as child
+
+  agent Consumer {
+    await payload <- @child
+    commit payload
+  }
+
+  converge when: all_committed
+  budget: rounds(10)
+}`,
+    );
+    writeFileSync(
+      join(tmpDir, "sub/child.slang"),
+      `flow "child" {
+  import "./grandchild.slang" as grandchild
+
+  agent Relay {
+    await payload <- @grandchild
+    commit payload
+  }
+
+  converge when: all_committed
+}`,
+    );
+    writeFileSync(
+      join(tmpDir, "sub/grandchild.slang"),
+      `flow "grandchild" {
+  agent Producer {
+    stake produce() -> @out
+    commit
+  }
+  converge when: all_committed
+}`,
+    );
+
+    const out = run(["run", "main.slang", "--adapter", "echo"], tmpDir);
+    assert.ok(out.includes("FLOW CONVERGED"));
+  });
+
+  it("fails explicitly when an import cannot be resolved", () => {
+    writeFileSync(
+      join(tmpDir, "main.slang"),
+      `flow "main" {
+  import "./missing.slang" as missing
+
+  agent Consumer {
+    await payload <- @missing
+    commit payload
+  }
+
+  converge when: all_committed
+}`,
+    );
+
+    try {
+      run(["run", "main.slang", "--adapter", "echo"], tmpDir);
+      assert.fail("Expected error");
+    } catch (err: any) {
+      const stderr = String(err.stderr ?? err.stdout ?? err.message ?? "");
+      assert.ok(stderr.includes("E409") || stderr.includes("Import failed"));
+    }
+  });
+});
+

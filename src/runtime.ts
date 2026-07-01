@@ -51,6 +51,16 @@ export interface AgentState {
   escalateReason?: string;
 }
 
+export interface MailboxDelivery {
+  source: string;
+  value: unknown;
+}
+
+export interface ImportedFlowSource {
+  source: string;
+  path?: string;
+}
+
 export interface FlowState {
   name: string;
   round: number;
@@ -60,8 +70,8 @@ export interface FlowState {
   outputs: unknown[];
   /** final status */
   status: "running" | "converged" | "budget_exceeded" | "escalated" | "deadlock";
-  /** data staked between agents: key = "Source->Target" */
-  mailbox: Map<string, unknown>;
+  /** queued deliveries waiting to be awaited, keyed by target agent name */
+  mailbox: Map<string, MailboxDelivery[]>;
   /** flow-level parameters injected at startup */
   params: Record<string, unknown>;
 }
@@ -82,14 +92,16 @@ export interface RuntimeOptions {
   resumeFrom?: FlowState;
   /** tool handler implementations — keys match tool names declared in agent `tools:` metadata */
   tools?: Record<string, ToolHandler>;
-  /** callback invoked after the flow converges successfully */
+  /** callback invoked after the flow reaches any terminal status */
   onConverge?: (state: FlowState) => void | Promise<void>;
   /** deliver handler implementations — keys match handler names used in `deliver:` statements */
   deliverers?: Record<string, DeliverHandler>;
   /** flow parameters matched against `flow "name" (param: "type") { ... }` declarations */
   params?: Record<string, unknown>;
-  /** loader for imported sub-flows — receives the path string from `import "path" as alias` */
-  importLoader?: (path: string) => string | Promise<string>;
+  /** canonical path of the current flow source, used to resolve relative imports */
+  sourcePath?: string;
+  /** loader for imported sub-flows — receives the requested import path and the calling file path, if known */
+  importLoader?: (path: string, from?: string) => string | ImportedFlowSource | Promise<string | ImportedFlowSource>;
 }
 
 export type RuntimeEvent =
@@ -122,14 +134,24 @@ export async function runFlow(source: string, options: RuntimeOptions): Promise<
       1, 1, source,
     );
   }
+  if (program.flows.length > 1) {
+    throw new RuntimeError(
+      SlangErrorCode.E410,
+      formatErrorMessage(SlangErrorCode.E410, { count: program.flows.length }),
+      program.flows[1]!.span.start.line,
+      program.flows[1]!.span.start.column,
+      source,
+    );
+  }
   const flow = program.flows[0]!;
   return executeFlow(flow, options);
 }
 
 async function executeFlow(flow: FlowDecl, options: RuntimeOptions): Promise<FlowState> {
-  const { adapter, onEvent, parallel = true, checkpoint, resumeFrom, tools, onConverge, deliverers, params: inputParams = {}, importLoader } = options;
+  const { adapter, onEvent, parallel = true, checkpoint, resumeFrom, tools, onConverge, deliverers, params: inputParams = {}, importLoader, sourcePath } = options;
   const depGraph = resolveDeps(flow);
   const deadlocks = detectDeadlocks(depGraph);
+  const startedAt = Date.now();
 
   if (deadlocks.length > 0 && depGraph.ready.length === 0) {
     onEvent?.({ type: "flow_deadlock", agents: deadlocks[0]! });
@@ -141,6 +163,7 @@ async function executeFlow(flow: FlowDecl, options: RuntimeOptions): Promise<Flo
   const budgetNode = flow.body.find((n): n is BudgetStmt => n.type === "BudgetStmt");
   const maxRounds = extractBudgetValue(budgetNode, "rounds") ?? 10;
   const maxTokens = extractBudgetValue(budgetNode, "tokens") ?? Infinity;
+  const maxTimeSeconds = extractBudgetValue(budgetNode, "time");
   const agentDecls = flow.body.filter((n): n is AgentDecl => n.type === "AgentDecl");
   const deliverStmts = flow.body.filter((n): n is DeliverStmt => n.type === "DeliverStmt");
 
@@ -162,11 +185,9 @@ async function executeFlow(flow: FlowDecl, options: RuntimeOptions): Promise<Flo
       });
     }
     // Execute imports — each imported sub-flow becomes a synthetic committed agent
-    if (importLoader) {
-      const importStmts = flow.body.filter((n): n is ImportStmt => n.type === "ImportStmt");
-      for (const importStmt of importStmts) {
-        await executeImport(importStmt, state, options);
-      }
+    const importStmts = flow.body.filter((n): n is ImportStmt => n.type === "ImportStmt");
+    for (const importStmt of importStmts) {
+      await executeImport(importStmt, state, { ...options, sourcePath });
     }
   }
 
@@ -182,6 +203,11 @@ async function executeFlow(flow: FlowDecl, options: RuntimeOptions): Promise<Flo
       break;
     }
     if (state.tokensUsed > maxTokens) {
+      state.status = "budget_exceeded";
+      onEvent?.({ type: "flow_budget_exceeded", round: state.round });
+      break;
+    }
+    if (maxTimeSeconds != null && Date.now() - startedAt >= maxTimeSeconds * 1000) {
       state.status = "budget_exceeded";
       onEvent?.({ type: "flow_budget_exceeded", round: state.round });
       break;
@@ -457,6 +483,13 @@ async function executeStake(
         }
       }
 
+      const structuredOutputError = validateStructuredOutput(op, response.content);
+      if (structuredOutputError) {
+        const error = new Error(structuredOutputError);
+        error.name = "StructuredOutputValidationError";
+        throw error;
+      }
+
       agentState.output = response.content;
       agentState.status = "idle";
       onEvent?.({ type: "agent_output", agent: agentDecl.name, output: response.content });
@@ -473,11 +506,11 @@ async function executeStake(
         } else if (recipient.ref === "all") {
           for (const [name] of flowState.agents) {
             if (name !== agentDecl.name) {
-              flowState.mailbox.set(`${agentDecl.name}->${name}`, response.content);
+              enqueueDelivery(flowState, agentDecl.name, name, response.content);
             }
           }
         } else {
-          flowState.mailbox.set(`${agentDecl.name}->${recipient.ref}`, response.content);
+          enqueueDelivery(flowState, agentDecl.name, recipient.ref, response.content);
         }
       }
 
@@ -489,6 +522,18 @@ async function executeStake(
         await sleep(Math.min(1000 * 2 ** (attempt - 1), 8000));
       }
     }
+  }
+
+  if (lastError?.name === "StructuredOutputValidationError") {
+    throw new RuntimeError(
+      SlangErrorCode.E411,
+      formatErrorMessage(SlangErrorCode.E411, {
+        agent: agentDecl.name,
+        message: lastError.message,
+      }),
+      op.span.start.line,
+      op.span.start.column,
+    );
   }
 
   // All retries exhausted — the error propagates with location info
@@ -513,23 +558,16 @@ function executeAwait(
   op: AwaitOp,
   flowState: FlowState,
 ): "continue" | "commit" | "escalate" {
-  // Check if data is available in mailbox
-  for (const source of op.sources) {
-    if (source.ref === "*") {
-      // Accept from anyone
-      for (const [key, value] of flowState.mailbox) {
-        if (key.endsWith(`->${agentState.name}`)) {
-          agentState.bindings[op.binding] = value;
-          return "continue";
-        }
-      }
+  const resolved = resolveAwaitBinding(agentState, op, flowState);
+  if (resolved) {
+    agentState.bindings[op.binding] = resolved.value;
+    agentState.status = "idle";
+    if (resolved.remainingQueue.length === 0) {
+      flowState.mailbox.delete(agentState.name);
     } else {
-      const key = `${source.ref}->${agentState.name}`;
-      if (flowState.mailbox.has(key)) {
-        agentState.bindings[op.binding] = flowState.mailbox.get(key);
-        return "continue";
-      }
+      flowState.mailbox.set(agentState.name, resolved.remainingQueue);
     }
+    return "continue";
   }
 
   // Still waiting — stay blocked
@@ -645,18 +683,46 @@ async function executeImport(
   parentState: FlowState,
   options: RuntimeOptions,
 ): Promise<void> {
-  if (!options.importLoader) return;
-
-  let source: string;
-  try {
-    source = await options.importLoader(importStmt.path);
-  } catch {
-    // Import loader failed — skip so the parent flow continues
-    return;
+  if (!options.importLoader) {
+    throw new RuntimeError(
+      SlangErrorCode.E409,
+      formatErrorMessage(SlangErrorCode.E409, {
+        path: importStmt.path,
+        message: "no importLoader was provided",
+      }),
+      importStmt.span.start.line,
+      importStmt.span.start.column,
+    );
   }
 
-  const program = parse(source);
-  if (program.flows.length === 0) return;
+  let imported: ImportedFlowSource;
+  try {
+    imported = normalizeImportedFlowSource(await options.importLoader(importStmt.path, options.sourcePath));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new RuntimeError(
+      SlangErrorCode.E409,
+      formatErrorMessage(SlangErrorCode.E409, {
+        path: importStmt.path,
+        message,
+      }),
+      importStmt.span.start.line,
+      importStmt.span.start.column,
+    );
+  }
+
+  const program = parse(imported.source);
+  if (program.flows.length === 0) {
+    throw new RuntimeError(
+      SlangErrorCode.E409,
+      formatErrorMessage(SlangErrorCode.E409, {
+        path: importStmt.path,
+        message: "imported source defines no flow",
+      }),
+      importStmt.span.start.line,
+      importStmt.span.start.column,
+    );
+  }
 
   const subflow = program.flows[0]!;
 
@@ -666,7 +732,9 @@ async function executeImport(
     tools: options.tools,
     onEvent: options.onEvent,
     parallel: options.parallel,
-    // Deliberately omit: checkpoint, resumeFrom, onConverge, deliverers, importLoader
+    sourcePath: imported.path,
+    importLoader: options.importLoader,
+    // Deliberately omit: checkpoint, resumeFrom, onConverge, deliverers
   };
 
   const subState = await executeFlow(subflow, subOptions);
@@ -676,8 +744,14 @@ async function executeImport(
   if (subState.outputs.length > 0) {
     output = subState.outputs.length === 1 ? subState.outputs[0] : subState.outputs;
   } else {
+    const importedAliases = new Set(
+      subflow.body
+        .filter((node): node is ImportStmt => node.type === "ImportStmt")
+        .map((node) => node.alias),
+    );
     const committedOutputs: Record<string, unknown> = {};
     for (const [name, agentSt] of subState.agents) {
+      if (importedAliases.has(name)) continue;
       if (agentSt.committed && agentSt.output != null) {
         committedOutputs[name] = agentSt.output;
       }
@@ -702,7 +776,7 @@ async function executeImport(
   // Pre-populate mailbox so any parent agent can `await data <- @alias`
   for (const [agentName] of parentState.agents) {
     if (agentName !== importStmt.alias) {
-      parentState.mailbox.set(`${importStmt.alias}->${agentName}`, output);
+      enqueueDelivery(parentState, importStmt.alias, agentName, output);
     }
   }
 }
@@ -717,20 +791,160 @@ function findExecutableAgents(agentDecls: AgentDecl[], state: FlowState): AgentD
 
     const nextOp = decl.operations[agentState.opIndex]!;
     if (nextOp.type === "AwaitOp") {
-      // Check if data is available
-      for (const source of nextOp.sources) {
-        if (source.ref === "*") {
-          for (const [key] of state.mailbox) {
-            if (key.endsWith(`->${decl.name}`)) return true;
-          }
-        } else {
-          if (state.mailbox.has(`${source.ref}->${decl.name}`)) return true;
-        }
-      }
-      return false;
+      return resolveAwaitBinding(agentState, nextOp, state) !== null;
     }
     return true;
   });
+}
+
+interface AwaitBindingResult {
+  value: unknown;
+  remainingQueue: MailboxDelivery[];
+}
+
+function enqueueDelivery(
+  flowState: FlowState,
+  source: string,
+  target: string,
+  value: unknown,
+): void {
+  const queue = flowState.mailbox.get(target) ?? [];
+  queue.push({ source, value });
+  flowState.mailbox.set(target, queue);
+}
+
+function normalizeImportedFlowSource(imported: string | ImportedFlowSource): ImportedFlowSource {
+  return typeof imported === "string" ? { source: imported } : imported;
+}
+
+function resolveAwaitBinding(
+  agentState: AgentState,
+  op: AwaitOp,
+  flowState: FlowState,
+): AwaitBindingResult | null {
+  const queue = [...(flowState.mailbox.get(agentState.name) ?? [])];
+  const count = resolveAwaitCount(agentState, op, flowState);
+  validateAwaitConfiguration(op, count);
+
+  if (op.sources.length === 1) {
+    const source = op.sources[0]!.ref;
+    if (source === "any" || source === "*") {
+      return count == null
+        ? consumeDeliveries(queue, (delivery) => true, 1, (deliveries) => deliveries[0]!.value)
+        : consumeDeliveries(
+          queue,
+          (delivery) => true,
+          count,
+          (deliveries) => deliveries.map((delivery) => ({ source: delivery.source, value: delivery.value })),
+        );
+    }
+
+    return count == null
+      ? consumeDeliveries(queue, (delivery) => delivery.source === source, 1, (deliveries) => deliveries[0]!.value)
+      : consumeDeliveries(
+        queue,
+        (delivery) => delivery.source === source,
+        count,
+        (deliveries) => deliveries.map((delivery) => delivery.value),
+      );
+  }
+
+  const sourceRefs = op.sources.map((source) => source.ref);
+  return consumeSpecificSources(queue, sourceRefs);
+}
+
+function resolveAwaitCount(
+  agentState: AgentState,
+  op: AwaitOp,
+  flowState: FlowState,
+): number | undefined {
+  const countExpr = op.options["count"];
+  if (!countExpr) return undefined;
+
+  const value = resolveExprValue(countExpr, agentState, flowState);
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+    throw new RuntimeError(
+      SlangErrorCode.E408,
+      formatErrorMessage(SlangErrorCode.E408, { message: "`count` must evaluate to a positive integer" }),
+      op.span.start.line,
+      op.span.start.column,
+    );
+  }
+
+  return value;
+}
+
+function validateAwaitConfiguration(op: AwaitOp, count: number | undefined): void {
+  const sourceRefs = op.sources.map((source) => source.ref);
+  const hasWildcard = sourceRefs.includes("*");
+  const hasAny = sourceRefs.includes("any");
+
+  if ((hasWildcard || hasAny) && sourceRefs.length > 1) {
+    throw new RuntimeError(
+      SlangErrorCode.E408,
+      formatErrorMessage(SlangErrorCode.E408, { message: "`@any` and `*` cannot be combined with other await sources" }),
+      op.span.start.line,
+      op.span.start.column,
+    );
+  }
+
+  if (count != null && sourceRefs.length > 1) {
+    throw new RuntimeError(
+      SlangErrorCode.E408,
+      formatErrorMessage(SlangErrorCode.E408, { message: "`count` is only supported with a single await source, `@any`, or `*`" }),
+      op.span.start.line,
+      op.span.start.column,
+    );
+  }
+}
+
+function consumeDeliveries(
+  queue: MailboxDelivery[],
+  predicate: (delivery: MailboxDelivery) => boolean,
+  count: number,
+  buildValue: (deliveries: MailboxDelivery[]) => unknown,
+): AwaitBindingResult | null {
+  const indexes: number[] = [];
+  const deliveries: MailboxDelivery[] = [];
+
+  for (let index = 0; index < queue.length && deliveries.length < count; index++) {
+    const delivery = queue[index]!;
+    if (!predicate(delivery)) continue;
+    indexes.push(index);
+    deliveries.push(delivery);
+  }
+
+  if (deliveries.length < count) return null;
+
+  return {
+    value: buildValue(deliveries),
+    remainingQueue: removeQueueIndexes(queue, indexes),
+  };
+}
+
+function consumeSpecificSources(
+  queue: MailboxDelivery[],
+  sourceRefs: string[],
+): AwaitBindingResult | null {
+  const indexes: number[] = [];
+  const value: Record<string, unknown> = {};
+
+  for (const sourceRef of sourceRefs) {
+    const index = queue.findIndex((delivery, queueIndex) => delivery.source === sourceRef && !indexes.includes(queueIndex));
+    if (index === -1) return null;
+    indexes.push(index);
+    value[sourceRef] = queue[index]!.value;
+  }
+
+  return {
+    value,
+    remainingQueue: removeQueueIndexes(queue, indexes),
+  };
+}
+
+function removeQueueIndexes(queue: MailboxDelivery[], indexes: number[]): MailboxDelivery[] {
+  const toRemove = new Set(indexes);
+  return queue.filter((_delivery, index) => !toRemove.has(index));
 }
 
 function buildAgentPrompt(
@@ -969,6 +1183,47 @@ function extractJSON(text: string): Record<string, unknown> | undefined {
   return undefined;
 }
 
+function validateStructuredOutput(op: StakeOp, content: string): string | undefined {
+  if (!op.output) return undefined;
+
+  const parsed = extractJSON(content);
+  if (!parsed) {
+    return "missing JSON object matching the declared output schema";
+  }
+
+  for (const field of op.output.fields) {
+    if (!(field.name in parsed)) {
+      return `missing required field \"${field.name}\"`;
+    }
+
+    const value = parsed[field.name];
+    if (!matchesFieldType(value, field.fieldType)) {
+      return `field \"${field.name}\" expected ${field.fieldType} but got ${describeValueType(value)}`;
+    }
+  }
+
+  return undefined;
+}
+
+function matchesFieldType(value: unknown, fieldType: string): boolean {
+  switch (fieldType) {
+    case "string":
+      return typeof value === "string";
+    case "number":
+      return typeof value === "number" && Number.isFinite(value);
+    case "boolean":
+      return typeof value === "boolean";
+    default:
+      return true;
+  }
+}
+
+function describeValueType(value: unknown): string {
+  if (Array.isArray(value)) return "array";
+  if (value === null) return "null";
+  return typeof value;
+}
+
 // ─── Tool Helpers ───
 
 function resolveAgentTools(
@@ -1023,6 +1278,15 @@ export async function testFlow(source: string, options: RuntimeOptions): Promise
   }
   if (program.flows.length === 0) {
     return { passed: false, flowName: "", assertions: [], state: null, error: "No flow found in source" };
+  }
+  if (program.flows.length > 1) {
+    return {
+      passed: false,
+      flowName: "",
+      assertions: [],
+      state: null,
+      error: formatErrorMessage(SlangErrorCode.E410, { count: program.flows.length }),
+    };
   }
 
   const flow = program.flows[0]!;

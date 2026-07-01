@@ -21,7 +21,7 @@ import {
 
 function printUsage(): void {
   console.log(`
-  slang — SLANG interpreter v0.7.5
+  slang — SLANG interpreter v0.8.1
 
   USAGE:
     slang init [dir]               Scaffold a new SLANG project
@@ -90,6 +90,27 @@ function readSlangFile(filePath: string): string {
     console.error(`Error: cannot read file '${filePath}'`);
     process.exit(1);
   }
+}
+
+function createFilesystemImportLoader(entryFile: string) {
+  const entryAbsolute = resolve(entryFile);
+
+  return async (importPath: string, from?: string) => {
+    const baseDir = dirname(from ?? entryAbsolute);
+    const candidates = importPath.endsWith(".slang")
+      ? [resolve(baseDir, importPath)]
+      : [resolve(baseDir, importPath), resolve(baseDir, `${importPath}.slang`)];
+
+    for (const candidate of candidates) {
+      if (!existsSync(candidate)) continue;
+      return {
+        source: readFileSync(candidate, "utf-8"),
+        path: candidate,
+      };
+    }
+
+    throw new Error(`cannot resolve import '${importPath}' from '${from ?? entryAbsolute}'`);
+  };
 }
 
 function getAdapter(args: Record<string, string>): LLMAdapter {
@@ -439,7 +460,7 @@ async function cmdRun(args: Record<string, string>): Promise<void> {
   const deliverers = args["deliverers"] ? await loadDeliverers(args["deliverers"]) : undefined;
   const debug = args["debug"] === "true";
 
-  console.log(`${COLORS.bold}SLANG v0.7.5${COLORS.reset} — running ${file} with ${(adapter as any).name ?? args["adapter"] ?? "echo"}`);
+  console.log(`${COLORS.bold}SLANG v0.8.1${COLORS.reset} — running ${file} with ${(adapter as any).name ?? args["adapter"] ?? "echo"}`);
   if (tools) {
     console.log(`${COLORS.dim}Tools loaded: ${Object.keys(tools).join(", ")}${COLORS.reset}`);
   }
@@ -447,7 +468,14 @@ async function cmdRun(args: Record<string, string>): Promise<void> {
     console.log(`${COLORS.dim}Deliverers loaded: ${Object.keys(deliverers).join(", ")}${COLORS.reset}`);
   }
 
-  const state = await runFlow(source, { adapter, tools, deliverers, onEvent: createEventHandler(debug) });
+  const state = await runFlow(source, {
+    adapter,
+    tools,
+    deliverers,
+    sourcePath: resolve(file),
+    importLoader: createFilesystemImportLoader(file),
+    onEvent: createEventHandler(debug),
+  });
   printFlowResult(state);
 }
 
@@ -544,7 +572,7 @@ async function cmdTest(args: Record<string, string>): Promise<void> {
     defaultResponse: "[MOCK] Default test response\nCONFIDENCE: 0.9",
   });
 
-  console.log(`${COLORS.bold}SLANG v0.7.5${COLORS.reset} — testing ${file}`);
+  console.log(`${COLORS.bold}SLANG v0.8.1${COLORS.reset} — testing ${file}`);
 
   const result = await testFlow(source, {
     adapter,

@@ -24,7 +24,7 @@ Control flow:
 - **repeat until expr { ... }** — loop: repeat the body until the expression is true (max 100 iterations)
 
 Flow-level statements:
-- **deliver: handler(args)** — declares a post-convergence side-effect handler (e.g., save files, send webhooks). In zero-setup mode, simulate the handler's effect inline after the flow converges.
+- **deliver: handler(args)** — declares a post-termination side-effect handler (e.g., save files, send webhooks). In zero-setup mode, simulate the handler's effect inline after the flow terminates.
 
 When you receive a SLANG flow, execute it step by step following these rules:
 
@@ -59,7 +59,11 @@ Run agents turn by turn. In each turn:
    - `stake func(args) -> @Target` — Generate real, substantive content for `func`. This is NOT a simulation — produce actual analysis, writing, code, or research as requested. Then deliver the output to @Target's mailbox.
    - `stake func(args)` (no `->`) — Execute locally. Generate content but do NOT deliver to any mailbox. The result is stored in the agent's output only.
    - `let var = stake func(args)` — Execute the stake and store the result in the variable `var`. Optionally also delivers to a recipient if `-> @Target` is present.
-   - `await binding <- @Source` — Check if @Source has staked something to you. If yes, bind it. If no, skip this agent (still blocked).
+  - `await binding <- @Source` — Check if @Source has staked something to you. If yes, bind the single value. If no, skip this agent (still blocked).
+  - `await binding <- @A, @B` — Wait until every named source has delivered. Bind `{ A: valueA, B: valueB }`.
+  - `await binding <- @Source (count: N)` — Wait for `N` deliveries from that source. Bind `[value1, value2, ...]`.
+  - `await binding <- @any` or `await binding <- *` — Consume the first available delivery to this agent.
+  - `await binding <- @any (count: N)` or `await binding <- * (count: N)` — Bind `[{ source, value }, ...]` so the sender is preserved.
    - `commit [value] [if condition]` — If condition is met (or no condition), mark this agent as DONE. Its output becomes a final result.
    - `escalate @Target [reason: "..."] [if condition]` — If condition is met, stop and delegate. If target is @Human, STOP the entire flow and ask the user.
    - `when expr { ops }` — If expression is truthy, execute the nested operations.
@@ -149,7 +153,7 @@ If the flow converged AND has `deliver:` statements, execute them after the fina
 
 11. **`retry: N`** in agent metadata means: if your reasoning for a stake produces an obviously wrong or empty result, re-do it up to N times. Report each retry in the state log.
 
-12. **`output: { field: \"type\" }`** on a stake means: your response for that stake MUST include a JSON block with those exact fields. Wrap it in ````json ... ``` ```. Downstream agents reading `result.field` rely on this structure.
+12. **`output: { field: \"type\" }`** on a stake means: your response for that stake MUST include a JSON block with those exact fields and primitive types. Wrap it in ````json ... ``` ```. Downstream agents reading `result.field` rely on this structure.
 
 13. **`tools: [tool_name]`** in agent metadata means: that agent can use those tools to gather information or perform actions. When acting as that agent, if you determine a tool call would help, try to use it. **If you already have real tools available** in your environment (e.g., `read_file`, `write_file`, `web_search`, `code_exec`, or similar capabilities provided by your host — such as an IDE, MCP server, or chat platform), **use them directly** instead of simulating. Match tool names semantically: `web_search` maps to any available search/browsing tool, `code_exec` maps to any code execution or terminal tool, `read_file`/`write_file` map to any file system tool, etc. If no matching real tool is available, simulate the tool's result inline by generating realistic output.
 
@@ -161,11 +165,13 @@ If the flow converged AND has `deliver:` statements, execute them after the fina
 
 17. **`repeat until expr { ... }`** — repeat the body until the condition is true. Check before each iteration. Stop after 100 iterations max (safety limit).
 
-18. **`deliver: handler(args)`** at the flow level means: after the flow converges, simulate the side effect of calling `handler` with the given arguments and the flow's final output. Describe what would happen (e.g., "File saved to report.md", "Webhook sent to https://..."). Only execute on successful convergence.
+18. **`deliver: handler(args)`** at the flow level means: after the flow terminates, simulate the side effect of calling `handler` with the given arguments and the flow's final output or partial output. Describe what would happen (e.g., "File saved to report.md", "Webhook sent to https://..."). Execute this even on `budget_exceeded`, `deadlock`, or `escalated` because the runtime does.
 
 19. **`stake func(args)` without `-> @Target`** is a local stake — execute the LLM call, store the result in the agent's output, but do NOT deliver to any mailbox. This is useful for intermediate computations.
 
 20. **`let var = stake func(args)`** executes the stake and stores the result in a new variable. The variable is immediately available for subsequent operations. This enables chaining multiple LLM calls within a single agent. If `-> @Target` is also present, the result is both stored locally and delivered.
+
+21. Execute exactly one top-level `flow` per run. If the user provides multiple top-level flows, stop and ask which one should be executed instead of guessing.
 
 ---
 

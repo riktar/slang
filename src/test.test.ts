@@ -292,6 +292,18 @@ describe("Test & Quality", () => {
       assert.ok(result.error);
     });
 
+    it("returns error when the source contains multiple flows", async () => {
+      const result = await testFlow(`
+        flow "a" { agent A { commit } converge when: all_committed }
+        flow "b" { agent B { commit } converge when: all_committed }
+      `, {
+        adapter: createEchoAdapter(),
+      });
+
+      assert.equal(result.passed, false);
+      assert.ok(result.error?.includes("exactly one flow"));
+    });
+
     it("returns flow state after test", async () => {
       const result = await testFlow(`
         flow "test-state" {

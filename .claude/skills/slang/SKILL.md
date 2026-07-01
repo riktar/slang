@@ -36,8 +36,8 @@ flow "name" {
 
   import "file.slang" as alias    -- embed sub-flow (alias = committed agent)
   converge when: condition        -- flow termination
-  budget: tokens(N), rounds(N)   -- resource limits
-  deliver: handler(args)         -- post-convergence side effect
+  budget: tokens(N), rounds(N), time(N)   -- resource limits
+  deliver: handler(args)         -- post-termination side effect
   expect expr                    -- test assertion
 }
 
@@ -49,6 +49,7 @@ flow "name" (param: "string", count: "number") { ... }
 ## The 3 Primitives
 
 ### `stake` — Produce & Send
+
 ```slang
 stake func(args) -> @Target           -- send output to agent
 stake func(args) -> @Target, @Other   -- multiple recipients
@@ -64,15 +65,21 @@ Function names are **semantic labels** (not code references). They tell the LLM 
 Arguments can be positional, named, or mixed: `stake func(data, format: "json")`.
 
 ### `await` — Receive & Depend
+
 ```slang
 await data <- @Agent              -- from specific agent
 await data <- @Agent1, @Agent2    -- from multiple (wait all)
 await data <- @any                -- from any single agent
 await data <- *                   -- wildcard (anyone)
 await data <- @Workers (count: 3) -- wait for N deliveries
+
+-- Multi-source binds: { Agent1: ..., Agent2: ... }
+-- Single-source count binds: [v1, v2, v3]
+-- Wildcard / @any count binds: [{ source: "A", value: ... }, ...]
 ```
 
 ### `commit` / `escalate` — Accept or Reject
+
 ```slang
 commit                            -- done (no value)
 commit result                     -- done with value
@@ -84,14 +91,14 @@ escalate @Human if confidence < 0.5  -- conditional
 
 ## Special Recipients & Sources
 
-| Symbol | As Recipient (`->`) | As Source (`<-`) |
-|--------|---------------------|------------------|
-| `@AgentName` | Send to specific agent | Wait for specific agent |
-| `@out` | Send to flow output | — |
-| `@all` | Broadcast to all agents | — |
-| `@Human` | — (use with `escalate`) | — |
-| `@any` | — | Accept from any single agent |
-| `*` | — | Wildcard, accept from anyone |
+| Symbol       | As Recipient (`->`)     | As Source (`<-`)             |
+| ------------ | ----------------------- | ---------------------------- |
+| `@AgentName` | Send to specific agent  | Wait for specific agent      |
+| `@out`       | Send to flow output     | —                            |
+| `@all`       | Broadcast to all agents | —                            |
+| `@Human`     | — (use with `escalate`) | —                            |
+| `@any`       | —                       | Accept from any single agent |
+| `*`          | —                       | Wildcard, accept from anyone |
 
 ## Agent State & Flow State
 
@@ -111,6 +118,7 @@ tokens_used        -- total tokens consumed
 ## Control Flow
 
 ### Conditionals
+
 ```slang
 when feedback.approved {
   commit feedback
@@ -121,6 +129,7 @@ when feedback.approved {
 ```
 
 ### Variables
+
 ```slang
 let msg = "hello"                    -- declare
 set msg = "updated"                  -- update
@@ -129,6 +138,7 @@ set draft = stake revise(draft)      -- re-execute & update
 ```
 
 ### Loops
+
 ```slang
 repeat until done {
   stake process(data) -> @Checker
@@ -141,6 +151,7 @@ repeat until done {
 ## Flow-Level Constructs
 
 ### Converge (when does the flow end?)
+
 ```slang
 converge when: all_committed
 converge when: committed_count >= 2
@@ -148,21 +159,25 @@ converge when: @Analyst.committed && @Validator.committed
 ```
 
 ### Budget (resource limits)
+
 ```slang
 budget: tokens(50000)
 budget: rounds(5)
+budget: tokens(50000), rounds(5), time(60)
 budget: tokens(50000), rounds(5), time(60s)
 -- Default if omitted: rounds(10)
 ```
 
-### Deliver (post-convergence side effects)
+### Deliver (post-termination side effects)
+
 ```slang
 deliver: save_file(path: "report.md", format: "markdown")
 deliver: webhook(url: "https://hooks.example.com/done")
--- Only runs on successful convergence
+-- Runs on any terminal flow status in the runtime
 ```
 
 ### Import (composition)
+
 ```slang
 import "research.slang" as research_flow
 ```
@@ -170,6 +185,7 @@ import "research.slang" as research_flow
 ## Common Patterns
 
 ### 1. Simple Pipeline
+
 ```slang
 flow "pipeline" {
   agent Researcher {
@@ -186,6 +202,7 @@ flow "pipeline" {
 ```
 
 ### 2. Iterative Review Loop
+
 ```slang
 flow "review" {
   agent Writer {
@@ -216,6 +233,7 @@ flow "review" {
 ```
 
 ### 3. Parallel Fan-Out
+
 ```slang
 flow "parallel-report" {
   agent Coordinator {
@@ -239,6 +257,7 @@ flow "parallel-report" {
 ```
 
 ### 4. Local Stake Chain (single agent, no messaging)
+
 ```slang
 flow "local" {
   agent Writer {
@@ -253,6 +272,7 @@ flow "local" {
 ```
 
 ### 5. Parametric Flow (reusable function)
+
 ```slang
 flow "analysis" (topic: "string", depth: "number") {
   agent Analyst {
@@ -271,6 +291,7 @@ flow "analysis" (topic: "string", depth: "number") {
 ```
 
 ### 6. Import / Sub-flow Composition
+
 ```slang
 flow "full-report" {
   import "research.slang" as research   -- sub-flow runs to completion before parent starts
@@ -297,6 +318,7 @@ flow "full-report" {
 ## Writing Guidelines
 
 When writing SLANG flows:
+
 - Use descriptive agent names (`Researcher`, `Critic`, not `Agent1`)
 - Use semantic function names that describe the action (`gather`, `analyze`, `review`)
 - Always include `converge when:` — flows need a termination condition
@@ -310,6 +332,7 @@ When writing SLANG flows:
 ## Execution Modes
 
 ### 1. Runtime (production)
+
 ```bash
 slang run flow.slang --adapter openrouter --api-key $API_KEY
 slang run flow.slang --adapter openai --model gpt-4o
@@ -318,13 +341,16 @@ slang run flow.slang --adapter echo  # debug mode
 ```
 
 ### 2. Zero-Setup (any LLM chat)
+
 Paste the zero-setup prompt into any LLM's system prompt, then paste the `.slang` flow.
 The LLM executes it step-by-step without any tooling.
 
 ### 3. MCP Server
+
 ```bash
 claude mcp add slang -- npx --package @riktar/slang slang-mcp
 ```
+
 Tools: `run_flow`, `parse_flow`, `check_flow`, `get_zero_setup_prompt`
 
 ## Additional Resources

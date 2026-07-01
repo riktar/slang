@@ -1,6 +1,6 @@
 {
   "name": "@riktar/slang-lsp",
-  "version": "0.7.0",
+  "version": "0.8.1",
   "description": "Language Server Protocol implementation for SLANG",
   "type": "module",
   "main": "./dist/server.js",

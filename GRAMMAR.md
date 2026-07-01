@@ -1,7 +1,7 @@
 # SLANG Language Playbook
 
 > Complete syntax reference, formal grammar, and annotated examples for  
-> **SLANG v0.7.5** — Super Language for Agent Negotiation & Governance.
+> **SLANG v0.8.1** — Super Language for Agent Negotiation & Governance.
 
 ---
 
@@ -165,6 +165,8 @@ flow "flow-name" {
   ...body...
 }
 ```
+
+The parser accepts multiple top-level flows, but the runtime helpers `runFlow()` and `testFlow()` execute exactly one flow per invocation and fail explicitly if more than one flow is present.
 
 ### Parametric Flows
 
@@ -340,6 +342,8 @@ await data <- @Researcher
 -- Multiple sources (wait for all)
 await data <- @Researcher, @Scraper
 
+-- Binds: { Researcher: ..., Scraper: ... }
+
 -- Any source
 await input <- @any
 
@@ -348,6 +352,11 @@ await signal <- *
 
 -- With count option (wait for N deliveries)
 await results <- @Workers (count: 3)
+
+-- Single-source count binds: [value1, value2, value3]
+-- Wildcard / @any count binds: [{ source: "A", value: ... }, ...]
+
+`count` is supported only with a single named source, `@any`, or `*`.
 ```
 
 ### 5.3 `commit` — Accept & Terminate
@@ -544,6 +553,7 @@ Hard limits on resource consumption. When exhausted, the flow terminates with `b
 budget: tokens(50000)
 budget: rounds(5)
 budget: tokens(50000), rounds(5)
+budget: time(60)
 budget: time(60s)
 budget: tokens(50000), rounds(5), time(120s)
 ```
@@ -552,15 +562,15 @@ budget: tokens(50000), rounds(5), time(120s)
 |------------|---------|
 | `tokens(N)` | Max total tokens consumed across all LLM calls |
 | `rounds(N)` | Max number of execution rounds |
-| `time(Ns)` | Max wall-clock time in seconds |
+| `time(N)` / `time(Ns)` | Max wall-clock time in seconds |
 
 If no budget is specified, the runtime defaults to `rounds(10)`.
 
 ---
 
-## 10. Deliver — Post-Convergence Side Effects
+## 10. Deliver — Post-Termination Side Effects
 
-A `deliver` statement declares a handler that runs **after** the flow successfully converges. Multiple `deliver` statements are executed in declaration order.
+A `deliver` statement declares a handler that runs **after** the flow terminates. Multiple `deliver` statements are executed in declaration order.
 
 ```slang
 deliver: handler_name(arg1: "value", arg2: "value")
@@ -595,11 +605,11 @@ flow "report" {
 - Deliver handlers are provided at runtime via `RuntimeOptions.deliverers` (same pattern as `tools`)
 - Each handler receives (1) the last flow output and (2) the named arguments
 - If a handler name has no matching entry in `deliverers`, it is silently skipped
-- **Only** runs on successful convergence — not on `budget_exceeded`, `escalated`, or `deadlock`
+- Runs on any terminal status: `converged`, `budget_exceeded`, `escalated`, or `deadlock`
 
 ### `onConverge` Hook
 
-In addition to `deliver`, the runtime supports an `onConverge` callback (set via `RuntimeOptions.onConverge`) that fires after all deliver handlers complete. This is a programmatic hook, not part of the SLANG syntax.
+In addition to `deliver`, the runtime supports an `onConverge` callback (set via `RuntimeOptions.onConverge`) that fires after all deliver handlers complete for any terminal flow status. This is a programmatic hook, not part of the SLANG syntax.
 
 ---
 
@@ -625,10 +635,11 @@ flow "full-report" {
 ```
 
 **How it works:**
-- Requires `importLoader` in `RuntimeOptions` — a callback that receives the path string and returns source code
+- Requires `importLoader` in `RuntimeOptions` — a callback that receives `(path, from?)` and returns either source code or `{ source, path }`
 - The sub-flow runs with the same adapter and tools as the parent
-- The sub-flow's `@out` outputs (or committed agent outputs) become the alias agent's output
-- If `importLoader` is not provided or throws, the import is silently skipped
+- The sub-flow's `@out` outputs (or committed outputs from non-imported agents) become the alias agent's output
+- Returning `{ source, path }` allows nested relative imports to resolve from the imported file
+- If `importLoader` is not provided or throws, the flow fails explicitly
 - The alias is visible in `state.agents` as a committed agent
 
 **Combining import with parametric flows:**

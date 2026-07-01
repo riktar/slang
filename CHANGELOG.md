@@ -5,7 +5,36 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.8.1] — Runtime & Docs Alignment
+
+### Added
+
+- **Queued mailbox semantics** — agent deliveries are now queued per target instead of overwriting a single `Source->Target` slot.
+- **`await ... (count: N)` support** — the parser now accepts the documented `count:` keyword and the runtime implements count-based collection for a single named source, `@any`, and `*`.
+- **`@any` runtime support** — `await binding <- @any` now works in scheduler readiness checks and runtime execution.
+- **Time budget enforcement** — `budget: time(60)` and `budget: time(60s)` are both supported and enforced at runtime as wall-clock limits per `runFlow(...)` invocation.
+- **CLI import resolution** — `slang run` now resolves imports relative to the `.slang` file that declares them, with nested import support.
+- **Structured output validation** — declared `output:` schemas are now enforced against the extracted JSON payload.
+- New examples: `examples/any-source.slang`, `examples/time-budget.slang`
+
+### Changed
+
+- **Multi-source await semantics** — `await binding <- @A, @B` now waits for all named sources and binds an object keyed by source name.
+- **Wildcard / `@any` count semantics** — `await binding <- * (count: N)` and `await binding <- @any (count: N)` now bind arrays of `{ source, value }` objects.
+- **Import loader contract** — `importLoader` now receives `(path, from?)` and may return either a raw source string or `{ source, path }` for nested relative imports.
+- **Single-flow execution contract** — `runFlow()` and `testFlow()` now fail explicitly when the source contains multiple top-level flows instead of silently executing only the first one.
+- **Deliver / onConverge docs** — public docs now reflect the existing runtime behavior: deliver handlers and `onConverge` run on any terminal flow status.
+- **Playground docs** — documentation now matches the current UI, which focuses on editing, AST inspection, graph analysis, and prompt handoff.
+
+### Fixed
+
+- **Silent import skips** — missing or failing imports now surface as explicit runtime errors instead of being ignored.
+- **Broken composition example** — `examples/composition.slang` now demonstrates actual supported composition semantics.
+- **Broadcast example drift** — `examples/broadcast.slang` now uses wildcard count aggregation instead of implying that bare `*` collects every delivery.
+- **Docs drift** — README, SPEC, GRAMMAR, CLI/API/PLAYGROUND docs, zero-setup prompt, and Monaco snippets/hover text were aligned with the implemented behavior.
+- **Version drift** — CLI banner, playground badge, MCP metadata, package manifests, lockfile, and formal docs now identify the 0.8.1 release.
+
+## [0.8.0]
 
 ### Added
 

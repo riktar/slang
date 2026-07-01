@@ -233,6 +233,15 @@ describe("Parser", () => {
       assert.ok(op.options["limit"]);
       assert.equal((op.options["limit"] as NumberLit).value, 3);
     });
+
+    it("parses await with count option", () => {
+      const op = firstOp<AwaitOp>(
+        'flow "t" { agent C { await results <- @Workers (count: 3) } }',
+        "AwaitOp",
+      );
+      assert.ok(op.options["count"]);
+      assert.equal((op.options["count"] as NumberLit).value, 3);
+    });
   });
 
   // ─── Commit ───
@@ -394,6 +403,14 @@ describe("Parser", () => {
       const budget = flow.body.find((n): n is BudgetStmt => n.type === "BudgetStmt");
       assert.ok(budget);
       assert.equal(budget.items[0]!.kind, "time");
+    });
+
+    it("parses budget with time seconds suffix", () => {
+      const flow = firstFlow('flow "t" { budget: time(60s) }');
+      const budget = flow.body.find((n): n is BudgetStmt => n.type === "BudgetStmt");
+      assert.ok(budget);
+      assert.equal(budget.items[0]!.kind, "time");
+      assert.equal((budget.items[0]!.value as NumberLit).value, 60);
     });
   });
 

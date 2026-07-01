@@ -1,6 +1,6 @@
 # SLANG Formal Grammar (EBNF)
 
-Complete formal grammar for SLANG v0.7.5.
+Complete formal grammar for SLANG v0.8.1.
 
 ## Lexical Elements
 

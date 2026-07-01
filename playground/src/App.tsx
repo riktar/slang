@@ -126,7 +126,7 @@ export default function App() {
           <div className="flex items-center gap-2">
             <Zap className="w-5 h-5 text-amber-400" />
             <h1 className="text-lg font-bold tracking-tight">SLANG Playground</h1>
-            <span className="text-xs text-zinc-500 font-mono">v0.7.5</span>
+            <span className="text-xs text-zinc-500 font-mono">v0.8.1</span>
           </div>
           <span className="text-zinc-700 hidden sm:block">·</span>
           <p className="text-xs text-zinc-500 hidden sm:block">

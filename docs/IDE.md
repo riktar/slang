@@ -61,7 +61,7 @@ cd packages/vscode-slang
 npm install
 npm run build
 npx @vscode/vsce package
-code --install-extension vscode-slang-0.7.0.vsix
+code --install-extension vscode-slang-0.8.1.vsix
 ```
 
 ### What you get

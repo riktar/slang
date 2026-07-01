@@ -1,6 +1,6 @@
 # SLANG — Super Language for Agent Negotiation & Governance
 
-## Specification v0.7.5
+## Specification v0.8.1
 
 ---
 
@@ -46,10 +46,13 @@ Parameter types (`"string"`, `"number"`, `"boolean"`) are advisory; the runtime 
 Values are passed via `RuntimeOptions.params` when calling `runFlow`.
 
 A flow contains:
+
 - One or more `agent` declarations
 - Optional `converge` condition
 - Optional `budget` constraint
 - Optional `import` statements
+
+The parser accepts multiple top-level `flow` declarations in one source file, but the runtime helpers `runFlow()` and `testFlow()` execute exactly one flow per invocation and fail explicitly if more than one flow is present.
 
 ### 2.2 Agent
 
@@ -62,6 +65,7 @@ agent Name {
 ```
 
 An agent can optionally have:
+
 - A `role` descriptor (natural language string describing its purpose)
 - A `model` preference (e.g., `model: "claude-sonnet"`)
 - A `tools` list (e.g., `tools: [web_search, code_exec]`)
@@ -91,9 +95,10 @@ stake <function>(<args...>) [-> @<recipient>]
 - Sends the result to `recipient` (if specified)
 - The function name is a **semantic label**, not a code reference — it tells the LLM *what* to do
 - Arguments can be literals, references to previous data, or natural language descriptions
-- The optional `output:` block declares a **structured output contract** — the runtime injects the schema into the LLM prompt, ensuring the response contains a JSON object with the specified fields
+- The optional `output:` block declares a **structured output contract** — the runtime injects the schema into the LLM prompt, extracts a JSON object from the response, and validates that every declared field is present with the expected primitive type
 
 Multiple recipients:
+
 ```slang
 stake analyze(data) -> @Critic, @Logger
 ```
@@ -137,10 +142,10 @@ agent Writer {
 #### `await` — Receive & Depend
 
 ```slang
-await <binding> <- @<source>
+await <binding> <- <sources> [(count: <number>)]
 ```
 
-- Blocks until `source` produces a `stake` directed at this agent
+- Blocks until the required delivery or deliveries exist for this agent
 - Binds the received data to `binding` for use in subsequent operations
 
 Multiple sources (wait for all):
@@ -148,20 +153,31 @@ Multiple sources (wait for all):
 await data <- @Researcher, @Scraper
 ```
 
+When multiple named sources are listed, the binding is an object keyed by source name, e.g. `{ Researcher: ..., Scraper: ... }`.
+
 Multiple sources with count:
 ```slang
 await results <- @Workers (count: 3)
 ```
+
+`count` is supported only with a single named source, `@any`, or `*`.
+
+- Single named source with `count` binds an array of values: `[v1, v2, ...]`
+- `@any` or `*` with `count` binds an array of `{ source, value }` objects so provenance is preserved
 
 Any source:
 ```slang
 await input <- @any
 ```
 
+Without `count`, `@any` consumes the first available delivery to the awaiting agent.
+
 Wildcard (from anyone):
 ```slang
 await signal <- *
 ```
+
+Without `count`, `*` also consumes the first available delivery to the awaiting agent.
 
 #### `commit` — Accept & Terminate
 
@@ -330,6 +346,7 @@ Hard limits on resource consumption:
 budget: tokens(50000)
 budget: rounds(5)
 budget: tokens(50000), rounds(5)
+budget: time(60)
 budget: time(60s)
 ```
 
@@ -357,11 +374,12 @@ flow "full-report" {
 ```
 
 **Runtime behaviour:**
-1. `importLoader(path)` callback is invoked with the literal path string.
-2. The sub-flow is fully executed with the same adapter and tools.
-3. The sub-flow's `@out` outputs (or last committed agent outputs) become the alias agent's output.
-4. The alias is registered as a committed agent in the parent flow state.
-5. If no `importLoader` is provided, the `import` statement is silently skipped.
+1. `importLoader(path, from?)` callback is invoked with the literal path string and, when known, the file path of the flow that declared the import.
+2. The loader may return either a raw source string or `{ source, path }`. Returning `path` allows nested relative imports to resolve from the imported file.
+3. The sub-flow is fully executed with the same adapter and tools.
+4. The sub-flow's `@out` outputs (or committed outputs from non-imported agents) become the alias agent's output.
+5. The alias is registered as a committed agent in the parent flow state.
+6. If no `importLoader` is provided, or the import cannot be resolved, execution fails explicitly.
 
 **Combining with parametric flows:**
 
@@ -379,11 +397,11 @@ flow "pipeline" (topic: "string") {
 }
 ```
 
-### 2.9 Deliver — Post-Convergence Side Effects
+### 2.9 Deliver — Post-Termination Side Effects
 
 #### `deliver`
 
-A `deliver` statement declares a handler to execute **after** the flow converges. Deliver statements are flow-level (siblings of `agent`, `converge`, `budget`) and are executed in declaration order.
+A `deliver` statement declares a handler to execute **after** the flow terminates. Deliver statements are flow-level (siblings of `agent`, `converge`, `budget`) and are executed in declaration order.
 
 ```slang
 deliver: handler_name(args)
@@ -435,17 +453,17 @@ Each handler receives:
 
 If a handler name in the `.slang` file has no matching entry in `deliverers`, it is silently skipped (backward compatible).
 
-Deliver statements are **not** executed when the flow terminates with `budget_exceeded`, `escalated`, or `deadlock` status — only on successful convergence.
+Deliver statements are executed on any terminal flow status: `converged`, `budget_exceeded`, `escalated`, or `deadlock`.
 
 #### `onConverge` Runtime Hook
 
-The `onConverge` callback is a runtime-level hook invoked after all `deliver` handlers complete:
+`onConverge` is a historical runtime API name. The callback is invoked after all `deliver` handlers complete for any terminal flow status:
 
 ```typescript
 const state = await runFlow(source, {
   adapter,
   onConverge: async (finalState) => {
-    console.log(`Flow converged in ${finalState.round} rounds`);
+    console.log(`Flow ended with ${finalState.status} in ${finalState.round} rounds`);
   },
 });
 ```

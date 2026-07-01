@@ -23,6 +23,8 @@ const state = await runFlow(source, {
 })
 ```
 
+`runFlow()` and `testFlow()` execute exactly one top-level `flow`. If the source contains multiple flows, they fail explicitly instead of silently picking the first declaration.
+
 ## Adapters
 
 ```typescript
@@ -65,6 +67,29 @@ const state = await runFlow(source, {
 })
 ```
 
+## Composition Imports
+
+Runtime composition is driven by `importLoader`:
+
+```typescript
+const state = await runFlow(source, {
+  adapter,
+  sourcePath: "/absolute/path/to/root.slang",
+  importLoader: async (path, from) => {
+    const resolvedPath = resolve(dirname(from ?? "/absolute/path/to/root.slang"), path)
+    return {
+      source: await readFile(resolvedPath, 'utf8'),
+      path: resolvedPath,
+    }
+  },
+})
+```
+
+- `importLoader(path, from?)` receives the literal import string plus the path of the file that declared it, when known.
+- The loader may return either a raw source string or `{ source, path }`.
+- Return `{ source, path }` when you want nested relative imports to keep resolving from the imported file.
+- If an import cannot be resolved, execution fails explicitly.
+
 See [examples/tools.js](../examples/tools.js) for template code with `web_search` and `code_exec`.
 
 ## Checkpoint & Resume
@@ -86,7 +111,7 @@ const resumed = await runFlow(source, { adapter, resumeFrom: saved })
 
 ## Deliver & onConverge
 
-Execute side effects after convergence using `deliver:` in the `.slang` file and `deliverers` in runtime options:
+Execute side effects after flow termination using `deliver:` in the `.slang` file and `deliverers` in runtime options:
 
 ```slang
 flow "report" {
@@ -112,10 +137,15 @@ const state = await runFlow(source, {
     },
   },
   onConverge: async (finalState) => {
-    console.log(`Converged in ${finalState.round} rounds`)
+    console.log(`Flow ended with ${finalState.status} in ${finalState.round} rounds`)
   },
 })
 ```
+
+Current runtime behavior:
+
+- `deliver:` handlers run on any terminal status: `converged`, `budget_exceeded`, `deadlock`, or `escalated`.
+- `onConverge` is a historical API name; it is also invoked after any terminal flow status.
 
 See [examples/finalizer.slang](../examples/finalizer.slang) for the Finalizer pattern.
 
@@ -154,3 +184,11 @@ const { program, errors } = parseWithRecovery(source)
 ```
 
 Error codes follow a convention: L1xx (lexer), P2xx (parser), R3xx (resolver), E4xx (runtime). All errors include line/column and human-friendly messages with source context.
+
+## Structured Output Contracts
+
+When a stake declares `output: { field: "type" }`, the runtime now validates the extracted JSON payload:
+
+- every declared field must be present;
+- `string`, `number`, and `boolean` field types are enforced;
+- invalid structured output fails execution explicitly.

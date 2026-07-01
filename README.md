@@ -149,7 +149,7 @@ slang run hello.slang --adapter openrouter   # uses OPENROUTER_API_KEY from .env
 
 ```bash
 slang playground
-# Opens http://localhost:5174 - write, visualize, run flows in the browser
+# Opens http://localhost:5174 - write, inspect, and visualize flows in the browser
 ```
 
 ---

@@ -37,6 +37,10 @@ export enum SlangErrorCode {
   E405 = "E405", // Tool execution error
   E406 = "E406", // Retries exhausted
   E407 = "E407", // Test assertion failed
+  E408 = "E408", // Invalid await configuration
+  E409 = "E409", // Import resolution failed
+  E410 = "E410", // Multiple executable flows provided
+  E411 = "E411", // Structured output validation failed
 }
 
 // ─── Error Messages ───
@@ -71,6 +75,10 @@ const ERROR_MESSAGES: Record<SlangErrorCode, string> = {
   [SlangErrorCode.E405]: "Tool `{tool}` execution failed: {message}",
   [SlangErrorCode.E406]: "All {max} retries exhausted for agent `{agent}`: {message}",
   [SlangErrorCode.E407]: "Assertion failed: {message}",
+  [SlangErrorCode.E408]: "Invalid await configuration: {message}",
+  [SlangErrorCode.E409]: "Import failed for `{path}`: {message}",
+  [SlangErrorCode.E410]: "Runtime execution expects exactly one flow, but found {count}",
+  [SlangErrorCode.E411]: "Structured output validation failed for `{agent}`: {message}",
 };
 
 // ─── Formatting ───

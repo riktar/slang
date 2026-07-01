@@ -19,7 +19,7 @@ const KEYWORD_COMPLETIONS = [
   { label: 'repeat', detail: 'Loop construct', insertText: 'repeat until ${1:condition} {\n\t${0}\n}', kind: 14 },
   { label: 'converge', detail: 'Convergence condition', insertText: 'converge when: ${1:all_committed}', kind: 14 },
   { label: 'budget', detail: 'Budget constraint', insertText: 'budget: ${1|rounds,tokens,time|}(${2:value})', kind: 14 },
-  { label: 'deliver', detail: 'Post-convergence handler', insertText: 'deliver {\n\t${0}\n}', kind: 14 },
+  { label: 'deliver', detail: 'Post-termination handler', insertText: 'deliver: ${1:handler}(${2:args})', kind: 14 },
   { label: 'import', detail: 'Import another flow', insertText: 'import "${1:path}" as ${2:Name}', kind: 14 },
   { label: 'let', detail: 'Declare a variable', insertText: 'let ${1:name} = ${2:value}', kind: 14 },
   { label: 'set', detail: 'Update a variable', insertText: 'set ${1:name} = ${2:value}', kind: 14 },
@@ -164,18 +164,18 @@ export function computeMarkers(source: string): monaco.editor.IMarkerData[] {
 
 const KEYWORD_DOCS: Record<string, string> = {
   stake: '**stake** — Produce content and send it to another agent (or execute locally).\n\nSyntax: `stake action(args) -> @Target`',
-  await: '**await** — Block until another agent sends you data.\n\nSyntax: `await variable <- @Source`',
+  await: '**await** — Block until the required delivery or deliveries arrive.\n\nSyntax: `await variable <- @Source`\n`await variable <- @A, @B`\n`await variable <- @Source (count: N)`',
   commit: '**commit** — Accept the result and stop the agent.\n\nSyntax: `commit [value] [if condition]`',
   escalate: '**escalate** — Delegate to another agent (e.g. human).\n\nSyntax: `escalate @Target reason: "why"`',
   flow: '**flow** — Declare a multi-agent workflow.\n\nSyntax: `flow "name" { ... }`',
   agent: '**agent** — Declare an agent within a flow.\n\nSyntax: `agent Name { role: "..." ... }`',
   converge: '**converge** — Define the convergence condition for the flow.\n\nSyntax: `converge when: all_committed`',
-  budget: '**budget** — Set resource limits for the flow.\n\nSyntax: `budget: rounds(N), tokens(N), time(N)`',
+  budget: '**budget** — Set resource limits for the flow.\n\nSyntax: `budget: rounds(N), tokens(N), time(N)` or `budget: time(Ns)`',
   when: '**when** — Conditional block.\n\nSyntax: `when condition { ... }`',
   repeat: '**repeat** — Loop until a condition is met.\n\nSyntax: `repeat until condition { ... }`',
   let: '**let** — Declare a local variable.\n\nSyntax: `let name = value`',
   set: '**set** — Update a variable.\n\nSyntax: `set name = value`',
-  deliver: '**deliver** — Post-convergence handler.\n\nSyntax: `deliver { ... }`',
+  deliver: '**deliver** — Post-termination handler.\n\nSyntax: `deliver: handler(args)`',
   import: '**import** — Import another flow.\n\nSyntax: `import "path" as Name`',
 };
 

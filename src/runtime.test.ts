@@ -143,6 +143,193 @@ describe("Runtime", () => {
       assert.ok(state.agents.get("Listener1")!.committed);
       assert.ok(state.agents.get("Listener2")!.committed);
     });
+
+    it("awaits from @any", async () => {
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            stake produce() -> @B
+            commit
+          }
+          agent B {
+            await msg <- @any
+            commit msg
+          }
+          converge when: all_committed
+          budget: rounds(3)
+        }
+      `, { adapter: createFixedAdapter("from A\nCONFIDENCE: 1.0") });
+
+      assert.equal(state.status, "converged");
+      assert.equal(state.agents.get("B")!.output, "from A\nCONFIDENCE: 1.0");
+    });
+
+    it("waits for all named sources and binds them by source name", async () => {
+      const adapter: LLMAdapter = {
+        name: "per-agent/test",
+        async call(messages): Promise<LLMResponse> {
+          const systemMsg = messages.find((message) => message.role === "system")?.content ?? "";
+          if (systemMsg.includes('agent "A"')) return { content: "payload A", tokensUsed: 1 };
+          if (systemMsg.includes('agent "B"')) return { content: "payload B", tokensUsed: 1 };
+          return { content: "done", tokensUsed: 1 };
+        },
+      };
+
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            stake produce() -> @C
+            commit
+          }
+          agent B {
+            stake produce() -> @C
+            commit
+          }
+          agent C {
+            await data <- @A, @B
+            commit data
+          }
+          converge when: all_committed
+          budget: rounds(3)
+        }
+      `, { adapter });
+
+      assert.equal(state.status, "converged");
+      assert.deepEqual(state.agents.get("C")!.output, {
+        A: "payload A",
+        B: "payload B",
+      });
+    });
+
+    it("does not proceed on multi-source await when one named source never sends", async () => {
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            stake produce() -> @C
+            commit
+          }
+          agent B {
+            commit
+          }
+          agent C {
+            await data <- @A, @B
+            commit data
+          }
+          converge when: all_committed
+          budget: rounds(3)
+        }
+      `, { adapter: createFixedAdapter("payload\nCONFIDENCE: 1.0") });
+
+      assert.equal(state.status, "deadlock");
+      assert.equal(state.agents.get("C")!.committed, false);
+    });
+
+    it("collects count deliveries from a single source as an array", async () => {
+      const state = await runFlow(`
+        flow "t" {
+          agent Producer {
+            stake first() -> @Collector
+            stake second() -> @Collector
+            commit
+          }
+          agent Collector {
+            await results <- @Producer (count: 2)
+            commit results
+          }
+          converge when: all_committed
+          budget: rounds(5)
+        }
+      `, { adapter: createSequenceAdapter(["first value", "second value"]) });
+
+      assert.equal(state.status, "converged");
+      assert.deepEqual(state.agents.get("Collector")!.output, ["first value", "second value"]);
+    });
+
+    it("collects wildcard count deliveries with source metadata", async () => {
+      const adapter: LLMAdapter = {
+        name: "per-agent/test",
+        async call(messages): Promise<LLMResponse> {
+          const systemMsg = messages.find((message) => message.role === "system")?.content ?? "";
+          if (systemMsg.includes('agent "A"')) return { content: "payload A", tokensUsed: 1 };
+          if (systemMsg.includes('agent "B"')) return { content: "payload B", tokensUsed: 1 };
+          return { content: "done", tokensUsed: 1 };
+        },
+      };
+
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            stake produce() -> @C
+            commit
+          }
+          agent B {
+            stake produce() -> @C
+            commit
+          }
+          agent C {
+            await results <- * (count: 2)
+            commit results
+          }
+          converge when: all_committed
+          budget: rounds(3)
+        }
+      `, { adapter });
+
+      assert.equal(state.status, "converged");
+      assert.deepEqual(state.agents.get("C")!.output, [
+        { source: "A", value: "payload A" },
+        { source: "B", value: "payload B" },
+      ]);
+    });
+
+    it("consumes queued deliveries so sequential awaits read distinct messages", async () => {
+      const state = await runFlow(`
+        flow "t" {
+          agent Producer {
+            stake first() -> @Consumer
+            stake second() -> @Consumer
+            commit
+          }
+          agent Consumer {
+            await first <- @Producer
+            await second <- @Producer
+            commit second
+          }
+          converge when: all_committed
+          budget: rounds(5)
+        }
+      `, { adapter: createSequenceAdapter(["first payload", "second payload"]) });
+
+      assert.equal(state.status, "converged");
+      const consumer = state.agents.get("Consumer")!;
+      assert.equal(consumer.bindings["first"], "first payload");
+      assert.equal(consumer.bindings["second"], "second payload");
+      assert.equal(consumer.output, "second payload");
+    });
+
+    it("rejects count when multiple named sources are listed", async () => {
+      await assert.rejects(
+        () => runFlow(`
+          flow "t" {
+            agent A {
+              stake produce() -> @C
+              commit
+            }
+            agent B {
+              stake produce() -> @C
+              commit
+            }
+            agent C {
+              await results <- @A, @B (count: 2)
+              commit results
+            }
+            converge when: all_committed
+            budget: rounds(3)
+          }
+        `, { adapter: createFixedAdapter("payload") }),
+        /E408/,
+      );
+    });
   });
 
   // ─── Budget ───
@@ -207,6 +394,35 @@ describe("Runtime", () => {
       // Each agent has 12 operations → ~12 rounds needed.
       // Default budget is 10 rounds, so it should hit budget_exceeded.
       assert.equal(state.status, "budget_exceeded");
+    });
+
+    it("stops when the time budget is already exhausted", async () => {
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            stake work() -> @out
+            commit
+          }
+          converge when: all_committed
+          budget: time(0)
+        }
+      `, { adapter: createEchoAdapter() });
+
+      assert.equal(state.status, "budget_exceeded");
+    });
+
+    it("accepts time budget syntax with seconds suffix", async () => {
+      const state = await runFlow(`
+        flow "t" {
+          agent A {
+            commit
+          }
+          converge when: all_committed
+          budget: time(1s)
+        }
+      `, { adapter: createEchoAdapter() });
+
+      assert.equal(state.status, "converged");
     });
   });
 
@@ -395,6 +611,16 @@ describe("Runtime", () => {
     it("throws on empty source", async () => {
       await assert.rejects(
         () => runFlow('', { adapter: createEchoAdapter() }),
+      );
+    });
+
+    it("throws when runtime source contains multiple flows", async () => {
+      await assert.rejects(
+        () => runFlow(`
+          flow "a" { agent A { commit } converge when: all_committed }
+          flow "b" { agent B { commit } converge when: all_committed }
+        `, { adapter: createEchoAdapter() }),
+        /E410/,
       );
     });
   });
@@ -779,6 +1005,38 @@ describe("Runtime", () => {
       assert.equal(state.status, "converged");
       assert.equal(state.agents.get("B")!.committed, true);
     });
+
+    it("fails when a required structured output field is missing", async () => {
+      await assert.rejects(
+        () => runFlow(`
+          flow "t" {
+            agent Reviewer {
+              stake review(text: "hello") -> @out
+                output: { approved: "boolean", score: "number" }
+              commit
+            }
+            converge when: all_committed
+          }
+        `, { adapter: createFixedAdapter('```json\n{"approved": true}\n```') }),
+        /E411/,
+      );
+    });
+
+    it("fails when a structured output field has the wrong type", async () => {
+      await assert.rejects(
+        () => runFlow(`
+          flow "t" {
+            agent Reviewer {
+              stake review(text: "hello") -> @out
+                output: { approved: "boolean", score: "number" }
+              commit
+            }
+            converge when: all_committed
+          }
+        `, { adapter: createFixedAdapter('```json\n{"approved": true, "score": "high"}\n```') }),
+        /E411/,
+      );
+    });
   });
 
   // ─── v0.3: Checkpoint / Resume ───
@@ -817,7 +1075,7 @@ describe("Runtime", () => {
       `, {
         adapter: createEchoAdapter(),
         onEvent: collectEvents(events),
-        checkpoint: async () => {},
+        checkpoint: async () => { },
       });
 
       const cpEvents = events.filter((e) => e.type === "checkpoint");
@@ -1351,8 +1609,8 @@ describe("Runtime", () => {
         }
       `, {
         adapter: createEchoAdapter(),
-        deliverers: { save_file: async () => {} },
-        onConverge: async () => {},
+        deliverers: { save_file: async () => { } },
+        onConverge: async () => { },
         onEvent: collectEvents(events),
       });
 
@@ -1673,7 +1931,7 @@ describe("Runtime", () => {
           "sub-flow output\nCONFIDENCE: 0.9",
           "processed result\nCONFIDENCE: 0.9",
         ]),
-        importLoader: () => subFlowSource,
+        importLoader: () => ({ source: subFlowSource, path: "/virtual/sub.slang" }),
       });
 
       assert.equal(state.status, "converged");
@@ -1721,43 +1979,97 @@ describe("Runtime", () => {
         }
       `, {
         adapter,
-        importLoader: () => subFlowSource,
+        importLoader: () => ({ source: subFlowSource, path: "/virtual/producer.slang" }),
       });
 
       assert.ok(receivedData !== undefined, "Consumer should have received data from sub-flow");
     });
 
-    it("skips import gracefully when importLoader is not provided", async () => {
-      // When no importLoader is passed, imports silently no-op and the flow runs normally
-      // (agents awaiting from the alias will block — this tests the parser-only path)
-      const state = await runFlow(`
-        flow "standalone" {
-          agent A {
-            stake work() -> @out
-            commit
-          }
-          converge when: all_committed
-        }
-      `, { adapter: createEchoAdapter() });
+    it("throws when an import is present but no importLoader is provided", async () => {
+      await assert.rejects(
+        () => runFlow(`
+          flow "parent" {
+            import "missing.slang" as child
 
-      assert.equal(state.status, "converged");
+            agent A {
+              await data <- @child
+              commit data
+            }
+            converge when: all_committed
+          }
+        `, { adapter: createEchoAdapter() }),
+        /E409/,
+      );
     });
 
-    it("importLoader throwing does not crash the parent flow", async () => {
-      const state = await runFlow(`
-        flow "resilient" {
-          agent A {
-            stake work() -> @out
-            commit
+    it("throws when importLoader cannot resolve an import", async () => {
+      await assert.rejects(
+        () => runFlow(`
+          flow "resilient" {
+            import "missing.slang" as child
+
+            agent A {
+              await data <- @child
+              commit data
+            }
+            converge when: all_committed
           }
-          converge when: all_committed
-        }
-      `, {
-        adapter: createEchoAdapter(),
-        importLoader: () => { throw new Error("file not found"); },
+        `, {
+          adapter: createEchoAdapter(),
+          importLoader: () => { throw new Error("file not found"); },
+        }),
+        /E409/,
+      );
+    });
+
+    it("supports nested imports when the loader returns the resolved path", async () => {
+      const sources: Record<string, string> = {
+        "/flows/root.slang": `
+          flow "root" {
+            import "./sub/child.slang" as child
+
+            agent Consumer {
+              await data <- @child
+              commit data
+            }
+            converge when: all_committed
+          }
+        `,
+        "/flows/sub/child.slang": `
+          flow "child" {
+            import "./grandchild.slang" as grandchild
+
+            agent Relay {
+              await data <- @grandchild
+              commit data
+            }
+            converge when: all_committed
+          }
+        `,
+        "/flows/sub/grandchild.slang": `
+          flow "grandchild" {
+            agent Producer {
+              stake produce() -> @out
+              commit
+            }
+            converge when: all_committed
+          }
+        `,
+      };
+
+      const state = await runFlow(sources["/flows/root.slang"]!, {
+        adapter: createFixedAdapter("nested payload\nCONFIDENCE: 1.0"),
+        sourcePath: "/flows/root.slang",
+        importLoader: (path, from) => {
+          const normalized = new URL(path, `file://${from}`).pathname;
+          const source = sources[normalized];
+          if (!source) throw new Error(`missing ${normalized}`);
+          return { source, path: normalized };
+        },
       });
 
       assert.equal(state.status, "converged");
+      assert.equal(state.agents.get("Consumer")!.output, "nested payload\nCONFIDENCE: 1.0");
     });
   });
 });

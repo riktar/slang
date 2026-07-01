@@ -3,13 +3,13 @@
 -- in the parent flow via `await data <- @alias`.
 
 flow "full-report" {
-  import "research.slang" as research    -- runs sub-flow; alias acts as committed agent
+  import "hello.slang" as greeting       -- runs sub-flow; alias acts as committed agent
 
   agent Editor {
     role: "senior editor"
 
-    await findings <- @research          -- receive sub-flow output
-    stake edit(findings, format: "markdown") -> @out
+    await greeting_text <- @greeting      -- receive sub-flow output
+    stake edit(greeting_text, format: "markdown") -> @out
     commit
   }
 

@@ -1,16 +1,16 @@
--- Parallel broadcast and multi-source aggregation
--- Features: @all broadcast, * wildcard source, 4 parallel agents, coordinator pattern
+-- Parallel broadcast and wildcard count aggregation
+-- Features: @all broadcast, * wildcard source, count on await, 4 parallel agents, coordinator pattern
 -- Run with: slang run broadcast.slang --adapter openrouter --api-key $OPENROUTER_API_KEY
 --
 -- The Coordinator sends a single message to ALL agents via @all,
--- then collects all responses with the * wildcard source.
+-- then collects all responses with wildcard count on await.
 -- All analysts run in parallel — the runtime dispatches them concurrently.
 
 flow "parallel-report" {
   agent Coordinator {
     role: "Project coordinator who distributes tasks and compiles results"
     stake assign(sections: ["market", "technology", "finance"]) -> @all
-    await results <- *
+    await results <- * (count: 3)
     stake compile(results) -> @out
     commit
   }

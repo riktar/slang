@@ -9,7 +9,7 @@ export { RuntimeError } from "./runtime.js";
 export { resolveDeps, detectDeadlocks, analyzeFlow } from "./resolver.js";
 export type { AgentDep, DepGraph, FlowDiagnostic } from "./resolver.js";
 export { runFlow, testFlow, serializeFlowState, deserializeFlowState } from "./runtime.js";
-export type { AgentState, FlowState, RuntimeOptions, RuntimeEvent, ToolHandler, DeliverHandler, TestResult, AssertionResult } from "./runtime.js";
+export type { AgentState, MailboxDelivery, ImportedFlowSource, FlowState, RuntimeOptions, RuntimeEvent, ToolHandler, DeliverHandler, TestResult, AssertionResult } from "./runtime.js";
 export { createOpenAIAdapter, createAnthropicAdapter, createOpenRouterAdapter, createEchoAdapter, createMockAdapter, createRouterAdapter } from "./adapter.js";
 export type { LLMAdapter, LLMMessage, LLMResponse, OpenRouterAdapterConfig, MockAdapterConfig, RouterRule, RouterAdapterConfig } from "./adapter.js";
 export type * from "./ast.js";

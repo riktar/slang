@@ -1,5 +1,6 @@
 -- Test flow example: assertions with expect + contains
 -- Run with: slang test examples/test-flow.slang
+-- The default `slang test` mock adapter returns a response containing "[MOCK]".
 
 flow "greeting-test" {
   agent Greeter {
@@ -10,7 +11,7 @@ flow "greeting-test" {
 
   -- Assertions: evaluated after flow execution
   expect @Greeter.committed == true
-  expect @Greeter.output contains "hello"
+  expect @Greeter.output contains "MOCK"
 
   converge when: all_committed
 }
