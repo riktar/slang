@@ -2,12 +2,21 @@ import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 
 const CLI = join(import.meta.dirname, "../dist/cli.js");
 
 function run(args: string[], cwd?: string): string {
   return execFileSync("node", [CLI, ...args], {
+    cwd: cwd ?? process.cwd(),
+    encoding: "utf-8",
+    timeout: 15000,
+    env: { ...process.env, NODE_NO_WARNINGS: "1" },
+  });
+}
+
+function runResult(args: string[], cwd?: string) {
+  return spawnSync("node", [CLI, ...args], {
     cwd: cwd ?? process.cwd(),
     encoding: "utf-8",
     timeout: 15000,
@@ -174,12 +183,9 @@ export default {
 
   it("errors on invalid deliverers file", () => {
     writeFileSync(join(tmpDir, "bad.js"), `export default 42;`);
-    try {
-      run(["run", "flow.slang", "--adapter", "echo", "--deliverers", "bad.js"], tmpDir);
-      assert.fail("Expected error");
-    } catch (err: any) {
-      assert.ok(err.status !== 0);
-    }
+    const result = runResult(["run", "flow.slang", "--adapter", "echo", "--deliverers", "bad.js"], tmpDir);
+    assert.notEqual(result.status, 0);
+    assert.ok(result.stderr.includes("deliverers file must export an object"));
   });
 
   it("runs fine with no deliver statements even if --deliverers is passed", () => {
@@ -358,13 +364,10 @@ describe("CLI: import composition", () => {
 }`,
     );
 
-    try {
-      run(["run", "main.slang", "--adapter", "echo"], tmpDir);
-      assert.fail("Expected error");
-    } catch (err: any) {
-      const stderr = String(err.stderr ?? err.stdout ?? err.message ?? "");
-      assert.ok(stderr.includes("E409") || stderr.includes("Import failed"));
-    }
+    const result = runResult(["run", "main.slang", "--adapter", "echo"], tmpDir);
+    assert.notEqual(result.status, 0);
+    const stderr = `${result.stderr}${result.stdout}`;
+    assert.ok(stderr.includes("E409") || stderr.includes("Import failed"));
   });
 });
 
