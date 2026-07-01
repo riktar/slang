@@ -14,8 +14,8 @@
     }
   },
   "bin": {
-    "slang": "./dist/cli.js",
-    "slang-mcp": "./dist/mcp.js"
+    "slang": "dist/cli.js",
+    "slang-mcp": "dist/mcp.js"
   },
   "workspaces": [
     "packages/slang-lsp",
